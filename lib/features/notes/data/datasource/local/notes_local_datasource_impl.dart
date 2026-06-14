@@ -1,4 +1,5 @@
 import 'package:hive_ce/hive.dart';
+import 'package:syncnotes/app/app_logger.dart';
 
 import '../../models/note_model.dart';
 import 'notes_local_datasource.dart';
@@ -10,9 +11,8 @@ class NotesLocalDataSourceImpl implements NotesLocalDataSource {
 
   @override
   Future<List<NoteModel>> getNotes() async {
-    print("BOX SIZE: ${box.length}");
-    print("BOX VALUES: ${box.values.toList()}");
-
+    AppLogger.log("Box size: ${box.length}");
+    AppLogger.log("Box values: ${box.values.toList()}");
     return box.values.toList();
   }
 

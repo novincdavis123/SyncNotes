@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:syncnotes/app/app_logger.dart';
 
 import '../../domain/entities/note_entity.dart';
 import '../../domain/usecases/delete_note.dart';
@@ -58,9 +59,9 @@ class NotesBloc extends Bloc<NotesEvent, NotesState> {
     Emitter<NotesState> emit,
   ) async {
     try {
-      print("🟡 SAVE EVENT TRIGGERED: ${event.note.id}");
+      AppLogger.log("Save event triggered: ${event.note.id}");
       await saveNoteUseCase(event.note);
-      print("🟢 SAVE USECASE COMPLETED");
+      AppLogger.success("Save usecase completed");
       await _loadNotes(emit);
     } catch (e) {
       emit(NotesError(message: e.toString(), previousNotes: _currentNotes));

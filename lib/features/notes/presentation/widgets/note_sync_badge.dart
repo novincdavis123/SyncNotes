@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../../../../core/enums/sync_status.dart';
 
 class NoteSyncBadge extends StatelessWidget {
@@ -7,17 +6,47 @@ class NoteSyncBadge extends StatelessWidget {
 
   const NoteSyncBadge({super.key, required this.syncStatus});
 
-  @override
-  Widget build(BuildContext context) {
-    switch (syncStatus) {
+  Color _color(SyncStatus status) {
+    switch (status) {
       case SyncStatus.synced:
-        return const Chip(label: Text("Synced"));
+        return Colors.green;
 
       case SyncStatus.pending:
-        return const Chip(label: Text("Pending"));
+        return Colors.orange;
+
+      case SyncStatus.failed:
+        return Colors.red;
 
       case SyncStatus.conflict:
-        return const Chip(label: Text("Conflict"));
+        return Colors.purple;
     }
+  }
+
+  String _label(SyncStatus status) {
+    switch (status) {
+      case SyncStatus.synced:
+        return "Synced";
+
+      case SyncStatus.pending:
+        return "Pending";
+
+      case SyncStatus.failed:
+        return "Failed";
+
+      case SyncStatus.conflict:
+        return "Conflict";
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      label: Text(_label(syncStatus)),
+      backgroundColor: _color(syncStatus).withOpacity(0.15),
+      labelStyle: TextStyle(
+        color: _color(syncStatus),
+        fontWeight: FontWeight.w600,
+      ),
+    );
   }
 }
