@@ -1,209 +1,259 @@
 import 'package:syncnotes/app/app_logger.dart';
+import 'package:syncnotes/features/notes/data/datasource/local/notes_local_datasource.dart';
 import 'package:syncnotes/features/notes/data/datasource/local/sync_local_datasource.dart';
 import 'package:syncnotes/features/notes/data/models/sync_operation_model.dart';
+import 'package:syncnotes/features/sync/data/services/fake_api_service.dart';
 
-import 'package:syncnotes/sync/retry/retry_policy.dart';
-import 'package:syncnotes/sync/retry/default_retry_policy.dart';
-import 'package:syncnotes/sync/retry/retry_utils.dart';
+import 'package:syncnotes/sync/monitoring/sync_metrics_service.dart';
 import 'package:syncnotes/sync/retry/retry_decision.dart';
+import 'package:syncnotes/sync/retry/retry_policy.dart';
+import 'package:syncnotes/sync/retry/retry_utils.dart';
 import 'package:syncnotes/sync/retry/sync_failure_type.dart';
 
-import 'package:syncnotes/features/sync/data/services/fake_api_service.dart';
+import 'package:syncnotes/sync/sync_event.dart';
+import 'package:syncnotes/sync/sync_event_bus.dart';
 
 class SyncService {
   final SyncLocalDataSource localDataSource;
+  final NotesLocalDataSource notesLocalDataSource;
   final FakeApiService apiService;
+  final SyncMetricsService metricsService;
+  final SyncEventBus eventBus;
   final RetryPolicy retryPolicy;
 
   bool _isRunning = false;
 
-  // 🔥 concurrency control
-  int _activeTasks = 0;
   final int _maxConcurrentTasks = 3;
+  int _activeTasks = 0;
+
+  final Set<String> _processingIds = {};
 
   SyncService(
     this.localDataSource,
-    this.apiService, {
-    this.retryPolicy = defaultRetryPolicy,
+    this.notesLocalDataSource,
+    this.apiService,
+    this.metricsService,
+    this.eventBus, {
+    this.retryPolicy = const RetryPolicy(),
   });
 
-  // ------------------------------------------------------------
-  // QUEUE PROCESSOR (BATCH + PRIORITY)
-  // ------------------------------------------------------------
-
   Future<void> processQueue() async {
-    AppLogger.log('🚀 Sync queue started');
-
     if (_isRunning) return;
 
     _isRunning = true;
 
+    eventBus.emit(SyncEvent.started());
+
     try {
       final operations = await localDataSource.getOperations();
 
-      AppLogger.log('📦 Found ${operations.length} operations');
-
-      final sorted = _sortOperations(operations);
-
-      final batch = sorted.take(10).toList();
-
-      AppLogger.log('⚡ Processing batch of ${batch.length}');
-
-      for (final op in batch) {
-        await _processSingleOperation(op);
+      if (operations.isEmpty) {
+        eventBus.emit(SyncEvent.empty());
+        return;
       }
 
-      AppLogger.success('🎉 Queue processed successfully');
+      final batch = _sortOperations(
+        operations.where((e) => !e.isInProgress).toList(),
+      ).take(10).toList();
+
+      for (final operation in batch) {
+        try {
+          await _processSingleOperation(operation);
+        } catch (e) {
+          eventBus.emit(SyncEvent.error(e.toString()));
+        }
+      }
+
+      metricsService.printStatistics();
+
+      eventBus.emit(SyncEvent.completed());
     } catch (e) {
-      AppLogger.error('Queue processing failed', e);
+      eventBus.emit(SyncEvent.error(e.toString()));
     } finally {
       _isRunning = false;
     }
   }
 
-  // ------------------------------------------------------------
-  // PRIORITY SORTING
-  // ------------------------------------------------------------
-
-  List<SyncOperationModel> _sortOperations(List<SyncOperationModel> ops) {
-    final sorted = List<SyncOperationModel>.from(ops);
+  List<SyncOperationModel> _sortOperations(
+    List<SyncOperationModel> operations,
+  ) {
+    final sorted = List<SyncOperationModel>.from(operations);
 
     sorted.sort((a, b) {
-      // pending first
       if (a.status != b.status) {
-        if (a.status == 'pending') return -1;
-        if (b.status == 'pending') return 1;
+        if (a.status == "pending") return -1;
+        if (b.status == "pending") return 1;
       }
 
-      // lower retry first
       if (a.retryCount != b.retryCount) {
         return a.retryCount.compareTo(b.retryCount);
       }
 
-      // oldest first
       return a.timestamp.compareTo(b.timestamp);
     });
 
     return sorted;
   }
 
-  // ------------------------------------------------------------
-  // CONCURRENCY CONTROL WRAPPER
-  // ------------------------------------------------------------
+  Future<void> _processSingleOperation(SyncOperationModel operation) async {
+    if (_processingIds.contains(operation.id)) return;
 
-  Future<void> _processSingleOperation(SyncOperationModel op) async {
-    if (_activeTasks >= _maxConcurrentTasks) {
-      AppLogger.log('⏸️ Skipping ${op.id} (concurrency limit)');
-      return;
-    }
+    if (_activeTasks >= _maxConcurrentTasks) return;
 
+    _processingIds.add(operation.id);
     _activeTasks++;
 
     try {
-      await _processInternal(op);
+      await _processInternal(operation);
     } finally {
+      _processingIds.remove(operation.id);
       _activeTasks--;
     }
   }
 
-  // ------------------------------------------------------------
-  // CORE PROCESSING LOGIC
-  // ------------------------------------------------------------
+  Future<void> _processInternal(SyncOperationModel operation) async {
+    bool synced = false;
 
-  Future<void> _processInternal(SyncOperationModel op) async {
     try {
-      AppLogger.log('🔒 Locking op ${op.id}');
+      await localDataSource.addOperation(
+        operation.copyWith(isInProgress: true),
+      );
 
-      final locked = op.copyWith(isInProgress: true);
-      await localDataSource.addOperation(locked);
+      eventBus.emit(SyncEvent.operationStarted(operation.id));
 
-      final success = await apiService.pushToServer(op);
+      // =====================================================
+      // STEP 8 REAL CONFLICT DETECTION
+      // =====================================================
+
+      final localNote = await notesLocalDataSource.getNoteById(
+        operation.noteId,
+      );
+
+      final serverNote = await apiService.fetchNote(operation.noteId);
+
+      if (localNote != null && serverNote != null) {
+        final localTime = localNote.lastModifiedAt.toUtc();
+
+        final serverTime = DateTime.parse(serverNote["updatedAt"]).toUtc();
+
+        if (serverTime.isAfter(localTime)) {
+          eventBus.emit(
+            SyncEvent.conflictDetected(
+              id: operation.id,
+              meta: {
+                "local": {
+                  "id": localNote.id,
+                  "title": localNote.title,
+                  "body": localNote.body,
+                  "updatedAt": localTime.toIso8601String(),
+                },
+                "remote": serverNote,
+              },
+            ),
+          );
+
+          await localDataSource.addOperation(
+            operation.copyWith(status: "conflict", isInProgress: false),
+          );
+
+          AppLogger.log("⚠️ Conflict detected ${operation.id}");
+
+          return;
+        }
+      }
+
+      // =====================================================
+      // NORMAL SYNC
+      // =====================================================
+
+      final success = await apiService.pushToServer(operation);
 
       if (success) {
-        AppLogger.success('✅ Synced ${op.id}');
-        await localDataSource.removeOperation(op.id);
+        synced = true;
+
+        metricsService.recordSuccess();
+
+        eventBus.emit(SyncEvent.operationSuccess(operation.id));
+
+        await localDataSource.removeOperation(operation.id);
+
+        AppLogger.success("✅ Synced ${operation.id}");
+
         return;
       }
 
-      AppLogger.error('❌ Server rejected ${op.id}');
-      await _handleFailure(op, SyncFailureType.server);
-    } catch (e) {
-      AppLogger.error('💥 Network error for ${op.id}', e);
-      await _handleFailure(op, SyncFailureType.network);
-    } finally {
-      AppLogger.log('🔓 Unlocking op ${op.id}');
+      metricsService.recordFailure();
 
-      final reset = op.copyWith(isInProgress: false);
-      await localDataSource.addOperation(reset);
+      await _handleFailure(operation, SyncFailureType.server);
+    } catch (e) {
+      metricsService.recordFailure();
+
+      await _handleFailure(operation, SyncFailureType.network);
+
+      AppLogger.error("Sync error ${operation.id}", e);
+    } finally {
+      if (!synced) {
+        await localDataSource.addOperation(
+          operation.copyWith(isInProgress: false),
+        );
+      }
     }
   }
 
-  // ------------------------------------------------------------
-  // FAILURE + RETRY ENGINE (UNCHANGED LOGIC)
-  // ------------------------------------------------------------
-
   Future<void> _handleFailure(
-    SyncOperationModel op,
+    SyncOperationModel operation,
     SyncFailureType type,
   ) async {
-    final shouldRetry = shouldRetryOperation(type, op.retryCount, retryPolicy);
+    final retry = shouldRetryOperation(type, operation.retryCount, retryPolicy);
 
-    if (!shouldRetry) {
-      AppLogger.error('💀 Permanently failed ${op.id}');
+    if (!retry) {
+      eventBus.emit(
+        SyncEvent.permanentFailure(
+          operation.id,
+          "Operation permanently failed",
+        ),
+      );
 
-      final failed = op.copyWith(status: 'failed', isInProgress: false);
+      await localDataSource.addOperation(
+        operation.copyWith(status: "failed", isInProgress: false),
+      );
 
-      await localDataSource.addOperation(failed);
       return;
     }
 
-    final delay = calculateDelay(retryPolicy, op.retryCount);
+    metricsService.recordRetry();
 
-    AppLogger.log(
-      '⏳ Retrying ${op.id} after ${delay.inSeconds}s (attempt ${op.retryCount + 1})',
+    final delay = calculateDelay(retryPolicy, operation.retryCount);
+
+    eventBus.emit(
+      SyncEvent.retryScheduled(
+        id: operation.id,
+        attempt: operation.retryCount + 1,
+        delay: delay,
+      ),
     );
 
     await Future.delayed(delay);
 
-    final updated = SyncOperationModel(
-      id: op.id,
-      noteId: op.noteId,
-      type: op.type,
-      timestamp: op.timestamp,
-      status: 'pending',
-      retryCount: op.retryCount + 1,
-      lastTriedAt: DateTime.now().toUtc(),
-      isInProgress: false,
+    await localDataSource.addOperation(
+      operation.copyWith(
+        status: "pending",
+        retryCount: operation.retryCount + 1,
+        lastTriedAt: DateTime.now().toUtc(),
+        isInProgress: false,
+      ),
     );
-
-    await localDataSource.addOperation(updated);
   }
 
-  // ------------------------------------------------------------
-  // RECOVERY ENGINE
-  // ------------------------------------------------------------
-
   Future<void> recoverStuckOperations() async {
-    AppLogger.log('🔄 Recovery started');
+    final operations = await localDataSource.getOperations();
 
-    try {
-      final operations = await localDataSource.getOperations();
+    for (final operation in operations) {
+      if (!operation.isInProgress) continue;
 
-      int recoveredCount = 0;
-
-      for (final op in operations) {
-        if (op.isInProgress) {
-          recoveredCount++;
-
-          final recovered = op.copyWith(isInProgress: false, status: 'pending');
-
-          await localDataSource.addOperation(recovered);
-        }
-      }
-
-      AppLogger.success('♻️ Recovered $recoveredCount stuck operations');
-    } catch (e) {
-      AppLogger.error('Recovery failed', e);
+      await localDataSource.addOperation(
+        operation.copyWith(status: "pending", isInProgress: false),
+      );
     }
   }
 }

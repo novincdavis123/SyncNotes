@@ -28,24 +28,32 @@ class NotesRepositoryImpl implements NotesRepository {
   @override
   Future<NoteEntity?> getNoteById(String id) async {
     final model = await localDataSource.getNoteById(id);
-    if (model == null) return null;
+
+    if (model == null) {
+      return null;
+    }
+
     return model.toEntity();
   }
 
   @override
   Future<void> saveNote(NoteEntity note) async {
     AppLogger.sync("Adding operation for note: ${note.id}");
+
     await localDataSource.saveNote(note.toModel());
 
-    await _addSync(noteId: note.id, type: SyncOperationType.create);
+    await _addSync(note: note, type: SyncOperationType.create);
   }
 
   @override
   Future<void> deleteNote(String id) async {
-    final note = await localDataSource.getNoteById(id);
-    if (note == null) return;
+    final noteModel = await localDataSource.getNoteById(id);
 
-    final updated = note.copyWith(
+    if (noteModel == null) {
+      return;
+    }
+
+    final updated = noteModel.copyWith(
       isDeleted: true,
       lastModifiedAt: DateTime.now().toUtc(),
       syncStatus: SyncStatus.pending.name,
@@ -53,29 +61,31 @@ class NotesRepositoryImpl implements NotesRepository {
 
     await localDataSource.saveNote(updated);
 
-    await _addSync(noteId: id, type: SyncOperationType.delete);
+    await _addSync(note: updated.toEntity(), type: SyncOperationType.delete);
   }
 
-  // ------------------------------------------------------------
-  // SYNC QUEUE CREATION (PHASE 7 SAFE VERSION)
-  // ------------------------------------------------------------
+  // ============================================================
+  // STEP 7 SYNC QUEUE CREATION
+  // ============================================================
 
   Future<void> _addSync({
-    required String noteId,
+    required NoteEntity note,
     required SyncOperationType type,
   }) async {
     await syncLocalDataSource.addOperation(
       SyncOperationModel(
         id: const Uuid().v4(),
-        noteId: noteId,
+        noteId: note.id,
         type: type.name,
         timestamp: DateTime.now().toUtc(),
         status: SyncStatus.pending.name,
-
-        // 🔥 IMPORTANT FOR PHASE 7 SYSTEM
         retryCount: 0,
         lastTriedAt: null,
         isInProgress: false,
+
+        // Step 7 fields
+        title: note.title,
+        body: note.body,
       ),
     );
   }

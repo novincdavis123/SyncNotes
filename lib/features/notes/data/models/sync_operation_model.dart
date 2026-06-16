@@ -7,15 +7,19 @@ class SyncOperationModel extends HiveObject {
   @HiveField(0)
   final String id;
 
+  /// Note ID
   @HiveField(1)
   final String noteId;
 
+  /// create / update / delete
   @HiveField(2)
   final String type;
 
+  /// Local operation timestamp
   @HiveField(3)
   final DateTime timestamp;
 
+  /// pending / synced / failed / conflict
   @HiveField(4)
   final String status;
 
@@ -28,6 +32,14 @@ class SyncOperationModel extends HiveObject {
   @HiveField(7)
   final bool isInProgress;
 
+  /// Step 7: Note title
+  @HiveField(8)
+  final String title;
+
+  /// Step 7: Note body
+  @HiveField(9)
+  final String body;
+
   SyncOperationModel({
     required this.id,
     required this.noteId,
@@ -37,6 +49,8 @@ class SyncOperationModel extends HiveObject {
     this.retryCount = 0,
     this.lastTriedAt,
     required this.isInProgress,
+    required this.title,
+    required this.body,
   });
 
   SyncOperationModel copyWith({
@@ -44,6 +58,8 @@ class SyncOperationModel extends HiveObject {
     int? retryCount,
     DateTime? lastTriedAt,
     bool? isInProgress,
+    String? title,
+    String? body,
   }) {
     return SyncOperationModel(
       id: id,
@@ -54,6 +70,18 @@ class SyncOperationModel extends HiveObject {
       retryCount: retryCount ?? this.retryCount,
       lastTriedAt: lastTriedAt ?? this.lastTriedAt,
       isInProgress: isInProgress ?? this.isInProgress,
+      title: title ?? this.title,
+      body: body ?? this.body,
     );
+  }
+
+  /// Convenient serialization for conflict detection
+  Map<String, dynamic> toMap() {
+    return {
+      'id': noteId,
+      'title': title,
+      'body': body,
+      'updatedAt': timestamp.toIso8601String(),
+    };
   }
 }

@@ -1,37 +1,65 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'app/app.dart';
-import 'app/app_bloc_observer.dart';
-import 'di/injection.dart';
+import 'package:syncnotes/app/app.dart';
+import 'package:syncnotes/app/app_bloc_observer.dart';
+import 'package:syncnotes/app/app_logger.dart';
 
-import 'features/notes/presentation/bloc/notes_bloc.dart';
-import 'features/notes/presentation/bloc/notes_event.dart';
+import 'package:syncnotes/di/injection.dart';
 
-import 'sync/sync_engine.dart';
+import 'package:syncnotes/features/notes/presentation/bloc/notes_bloc.dart';
+import 'package:syncnotes/features/notes/presentation/bloc/notes_event.dart';
+
+import 'package:syncnotes/sync/monitoring/sync_metrics_service.dart';
+import 'package:syncnotes/sync/monitoring/sync_queue_monitor.dart';
+
+import 'package:syncnotes/sync/sync_engine.dart' as engine;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ===========================
-  // Dependency Injection
-  // ===========================
+  // ============================================================
+  // INIT DEPENDENCIES
+  // ============================================================
   await initDependencies();
 
-  // ===========================
-  // Bloc Observer (debug only)
-  // ===========================
+  // ============================================================
+  // START SYNC ENGINE (ONLY ONCE - SAFE)
+  // ============================================================
+  final syncEngine = sl<engine.SyncEngine>();
+  syncEngine.initialize();
+
+  // ============================================================
+  // DEBUG QUEUE STATUS
+  // ============================================================
+  final status = await sl<SyncQueueMonitor>().getStatus();
+
+  AppLogger.log(
+    '📦 Queue Status → Pending: ${status.pending}, '
+    'In Progress: ${status.inProgress}, '
+    'Failed: ${status.failed}',
+  );
+
+  // ============================================================
+  // DEBUG METRICS
+  // ============================================================
+  final metrics = sl<SyncMetricsService>();
+
+  AppLogger.log(
+    '📊 Sync Metrics → Success: ${metrics.totalSynced}, '
+    'Failed: ${metrics.totalFailed}, '
+    'Retried: ${metrics.totalRetried}, '
+    'Success Rate: ${metrics.successRate.toStringAsFixed(1)}%',
+  );
+
+  // ============================================================
+  // BLOC OBSERVER
+  // ============================================================
   Bloc.observer = AppBlocObserver();
 
-  // ===========================
-  // Sync Engine START (AFTER DI)
-  // ===========================
-  final engine = sl<SyncEngine>();
-  engine.initialize();
-
-  // ===========================
+  // ============================================================
   // RUN APP
-  // ===========================
+  // ============================================================
   runApp(
     MultiBlocProvider(
       providers: [

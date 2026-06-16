@@ -11,10 +11,14 @@ extension SyncMapper on SyncOperationModel {
       timestamp: timestamp,
       status: status,
 
-      // 🔥 Phase 7 additions
+      // Step 7 additions
       retryCount: retryCount,
       lastTriedAt: lastTriedAt,
       isInProgress: isInProgress,
+
+      // Conflict resolution data
+      title: title,
+      body: body,
     );
   }
 
@@ -35,10 +39,14 @@ extension SyncEntityMapper on SyncOperation {
       timestamp: timestamp,
       status: status,
 
-      // 🔥 Phase 7 additions
+      // Step 7 additions
       retryCount: retryCount,
       lastTriedAt: lastTriedAt,
       isInProgress: isInProgress,
+
+      // Conflict resolution data
+      title: title,
+      body: body,
     );
   }
 }

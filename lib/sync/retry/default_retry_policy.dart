@@ -1,3 +1,8 @@
-import 'retry_policy.dart';
+import 'package:syncnotes/sync/retry/retry_policy.dart';
 
-const RetryPolicy defaultRetryPolicy = RetryPolicy();
+const RetryPolicy defaultRetryPolicy = RetryPolicy(
+  maxRetries: 3,
+  baseDelay: Duration(seconds: 2),
+  maxDelay: Duration(seconds: 30),
+  backoffMultiplier: 2.0,
+);

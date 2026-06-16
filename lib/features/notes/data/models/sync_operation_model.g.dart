@@ -25,13 +25,15 @@ class SyncOperationModelAdapter extends TypeAdapter<SyncOperationModel> {
       retryCount: (fields[5] as num).toInt(),
       lastTriedAt: fields[6] as DateTime?,
       isInProgress: fields[7] as bool,
+      title: fields[8] as String,
+      body: fields[9] as String,
     );
   }
 
   @override
   void write(BinaryWriter writer, SyncOperationModel obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -47,7 +49,11 @@ class SyncOperationModelAdapter extends TypeAdapter<SyncOperationModel> {
       ..writeByte(6)
       ..write(obj.lastTriedAt)
       ..writeByte(7)
-      ..write(obj.isInProgress);
+      ..write(obj.isInProgress)
+      ..writeByte(8)
+      ..write(obj.title)
+      ..writeByte(9)
+      ..write(obj.body);
   }
 
   @override
