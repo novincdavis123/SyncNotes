@@ -1,11 +1,9 @@
 import 'dart:async';
-
 import 'package:flutter/widgets.dart';
 
 import 'package:syncnotes/app/app_logger.dart';
-import 'package:syncnotes/core/enums/sync_status_state.dart';
+import 'package:syncnotes/core/enums/sync_status.dart';
 import 'package:syncnotes/core/network/connectivity_service.dart';
-
 import 'package:syncnotes/sync/monitoring/sync_status_service.dart';
 import 'package:syncnotes/sync/sync_service.dart';
 
@@ -29,8 +27,6 @@ class SyncEngine with WidgetsBindingObserver {
   DateTime? _lastSyncTime;
   final Duration _cooldown = const Duration(seconds: 10);
 
-  bool _syncScheduled = false;
-
   SyncMode _mode = SyncMode.normal;
 
   int _recentFailures = 0;
@@ -42,29 +38,31 @@ class SyncEngine with WidgetsBindingObserver {
     this.syncStatusService,
   );
 
-  // ============================================================
-  // INIT
-  // ============================================================
+  // =========================================================
+  // INITIALIZE
+  // =========================================================
 
   void initialize() {
-    if (_isInitialized || _disposed) return;
+    if (_disposed || _isInitialized) return;
 
     _isInitialized = true;
 
-    syncStatusService.updateStatus(SyncStatusState.idle);
-
     WidgetsBinding.instance.addObserver(this);
+
+    syncStatusService.updateStatus(SyncStatus.pending);
 
     _recoverSafeState();
     _listenConnectivity();
     _startAdaptiveLoop();
 
     _scheduleSync(reason: "initial");
+
+    AppLogger.log("🚀 SyncEngine initialized");
   }
 
-  // ============================================================
+  // =========================================================
   // PUBLIC API
-  // ============================================================
+  // =========================================================
 
   Future<void> syncNow() async {
     if (_disposed) return;
@@ -78,21 +76,39 @@ class SyncEngine with WidgetsBindingObserver {
     if (_disposed) return;
 
     _isDirty = true;
+
+    syncStatusService.updateStatus(SyncStatus.pending);
+
     _scheduleSync(reason: "markDirty");
   }
 
-  // ============================================================
-  // ADAPTIVE MODE
-  // ============================================================
+  // =========================================================
+  // ADAPTIVE LOOP
+  // =========================================================
+
+  void _startAdaptiveLoop() {
+    _adaptiveTimer?.cancel();
+
+    _adaptiveTimer = Timer.periodic(_adaptiveInterval, (_) {
+      if (_disposed || _isRunning) return;
+
+      if (_isDirty) {
+        _triggerSync(reason: "adaptive_loop");
+      }
+    });
+  }
 
   Duration get _adaptiveInterval {
     switch (_mode) {
       case SyncMode.fast:
         return const Duration(seconds: 15);
+
       case SyncMode.normal:
         return const Duration(seconds: 30);
+
       case SyncMode.slow:
         return const Duration(minutes: 2);
+
       case SyncMode.paused:
         return const Duration(minutes: 5);
     }
@@ -101,56 +117,31 @@ class SyncEngine with WidgetsBindingObserver {
   void _evaluateMode() {
     if (_recentFailures >= 3) {
       _mode = SyncMode.slow;
-      AppLogger.log('🐢 Mode → SLOW');
-      return;
-    }
-
-    if (_recentSuccesses >= 5) {
+    } else if (_recentSuccesses >= 5) {
       _mode = SyncMode.fast;
-      AppLogger.log('🚀 Mode → FAST');
-      return;
+    } else {
+      _mode = SyncMode.normal;
     }
-
-    _mode = SyncMode.normal;
   }
 
-  // ============================================================
-  // ADAPTIVE LOOP (FIXED)
-  // ============================================================
-
-  void _startAdaptiveLoop() {
-    _adaptiveTimer?.cancel();
-
-    _adaptiveTimer = Timer.periodic(_adaptiveInterval, (_) {
-      if (_disposed) return;
-
-      if (_isDirty && !_isRunning) {
-        _triggerSync(reason: "adaptive_loop");
-      }
-    });
-  }
-
-  // ============================================================
-  // DEBOUNCE SYNC
-  // ============================================================
+  // =========================================================
+  // DEBOUNCE
+  // =========================================================
 
   void _scheduleSync({required String reason}) {
     if (_disposed) return;
-    if (_syncScheduled) return;
-
-    _syncScheduled = true;
 
     _debounceTimer?.cancel();
 
-    _debounceTimer = Timer(const Duration(seconds: 3), () {
-      _syncScheduled = false;
-      _triggerSync(reason: reason);
-    });
+    _debounceTimer = Timer(
+      const Duration(seconds: 3),
+      () => _triggerSync(reason: reason),
+    );
   }
 
-  // ============================================================
+  // =========================================================
   // CONNECTIVITY
-  // ============================================================
+  // =========================================================
 
   void _listenConnectivity() {
     _connectivitySubscription?.cancel();
@@ -161,18 +152,22 @@ class SyncEngine with WidgetsBindingObserver {
       if (_disposed) return;
 
       if (connected) {
-        AppLogger.log('📶 Online → sync queued');
-        _scheduleSync(reason: "connectivity");
+        AppLogger.log("📶 Online");
+
+        if (_isDirty) {
+          _scheduleSync(reason: "connectivity");
+        }
       } else {
-        AppLogger.log('📴 Offline');
-        syncStatusService.updateStatus(SyncStatusState.offline);
+        AppLogger.log("📴 Offline");
+
+        syncStatusService.updateStatus(SyncStatus.offline);
       }
     });
   }
 
-  // ============================================================
+  // =========================================================
   // CORE SYNC
-  // ============================================================
+  // =========================================================
 
   Future<void> _triggerSync({required String reason}) async {
     if (_disposed || _isRunning) return;
@@ -180,14 +175,11 @@ class SyncEngine with WidgetsBindingObserver {
     final now = DateTime.now();
 
     if (_lastSyncTime != null && now.difference(_lastSyncTime!) < _cooldown) {
-      AppLogger.log('⏱ Cooldown active');
+      _scheduleSync(reason: "cooldown");
       return;
     }
 
-    if (!_isDirty) {
-      AppLogger.log('🧠 Clean state - skipping');
-      return;
-    }
+    if (!_isDirty) return;
 
     _isRunning = true;
 
@@ -195,13 +187,13 @@ class SyncEngine with WidgetsBindingObserver {
       final connected = await connectivityService.isConnected();
 
       if (!connected) {
-        syncStatusService.updateStatus(SyncStatusState.offline);
+        syncStatusService.updateStatus(SyncStatus.offline);
         return;
       }
 
-      syncStatusService.updateStatus(SyncStatusState.syncing);
+      syncStatusService.updateStatus(SyncStatus.syncing);
 
-      AppLogger.log('🚀 Sync [$reason | mode: $_mode]');
+      AppLogger.log("🚀 Sync [$reason | mode: $_mode]");
 
       await syncService.processQueue();
 
@@ -213,62 +205,61 @@ class SyncEngine with WidgetsBindingObserver {
 
       _evaluateMode();
 
-      syncStatusService.updateStatus(SyncStatusState.success);
+      syncStatusService.updateStatus(SyncStatus.synced);
 
-      await Future.delayed(const Duration(seconds: 1));
-
-      syncStatusService.updateStatus(SyncStatusState.idle);
+      AppLogger.success("✅ Sync completed");
     } catch (e) {
-      AppLogger.error('Sync failed', e);
-
       _recentFailures++;
       _recentSuccesses = 0;
 
       _evaluateMode();
 
-      syncStatusService.updateStatus(SyncStatusState.error);
+      AppLogger.error("Sync failed", e);
+
+      syncStatusService.updateStatus(SyncStatus.failed);
     } finally {
       _isRunning = false;
     }
   }
 
-  // ============================================================
+  // =========================================================
   // RECOVERY
-  // ============================================================
+  // =========================================================
 
   Future<void> _recoverSafeState() async {
     try {
-      AppLogger.log('♻️ Recovery started');
+      AppLogger.log("♻️ Recovery started");
 
       await syncService.recoverStuckOperations();
-
-      syncStatusService.updateStatus(SyncStatusState.idle);
     } catch (e) {
-      AppLogger.error('Recovery failed', e);
-      syncStatusService.updateStatus(SyncStatusState.error);
+      AppLogger.error("Recovery failed", e);
     }
   }
 
-  // ============================================================
-  // LIFECYCLE
-  // ============================================================
+  // =========================================================
+  // APP LIFECYCLE
+  // =========================================================
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_disposed) return;
 
     if (state == AppLifecycleState.resumed) {
-      AppLogger.log('📱 Resume → sync check');
-      _scheduleSync(reason: "resume");
+      AppLogger.log("📱 App resumed");
+
+      if (_isDirty) {
+        _scheduleSync(reason: "resume");
+      }
     }
   }
 
-  // ============================================================
+  // =========================================================
   // DISPOSE
-  // ============================================================
+  // =========================================================
 
   void dispose() {
     _disposed = true;
+    _isInitialized = false;
 
     _adaptiveTimer?.cancel();
     _debounceTimer?.cancel();
@@ -276,11 +267,8 @@ class SyncEngine with WidgetsBindingObserver {
 
     WidgetsBinding.instance.removeObserver(this);
 
-    _isInitialized = false;
-    _isRunning = false;
+    syncStatusService.updateStatus(SyncStatus.pending);
 
-    syncStatusService.updateStatus(SyncStatusState.idle);
-
-    AppLogger.log('🛑 SyncEngine disposed');
+    AppLogger.log("🛑 SyncEngine disposed");
   }
 }

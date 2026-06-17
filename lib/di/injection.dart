@@ -43,6 +43,8 @@ import 'package:syncnotes/sync/monitoring/sync_metrics_service.dart';
 
 import 'package:syncnotes/sync/conflict/conflict_detector.dart';
 import 'package:syncnotes/sync/conflict/conflict_resolution_service.dart';
+import 'package:syncnotes/sync/history/sync_history_repository.dart';
+import 'package:syncnotes/sync/queue/sync_queue_analyzer.dart';
 
 final sl = GetIt.instance;
 
@@ -115,6 +117,10 @@ Future<void> initDependencies() async {
   sl.registerLazySingleton(() => SyncQueueMonitor(sl<SyncLocalDataSource>()));
   sl.registerLazySingleton(() => SyncHealthChecker(sl<SyncQueueMonitor>()));
 
+  sl.registerLazySingleton(
+    () => SyncHistoryRepository(sl<SyncLocalDataSource>()),
+  );
+  sl.registerLazySingleton(() => SyncQueueAnalyzer(sl<SyncLocalDataSource>()));
   // ============================================================
   // CONFLICT SYSTEM
   // ============================================================
@@ -141,6 +147,7 @@ Future<void> initDependencies() async {
       sl<FakeApiService>(),
       sl<SyncMetricsService>(),
       sl<SyncEventBus>(),
+      sl<SyncHistoryRepository>(),
     ),
   );
 

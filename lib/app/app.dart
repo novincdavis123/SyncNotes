@@ -10,9 +10,25 @@ class SyncNotesApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+
       title: 'Sync Notes',
+
+      // ======================================================
+      // THEME (READY FOR DARK MODE LATER)
+      // ======================================================
       theme: AppTheme.light,
-      home: const NotesPage(),
+      themeMode: ThemeMode.light,
+
+      // ======================================================
+      // NAVIGATION (SCAFFOLD FOR FUTURE ROUTES)
+      // ======================================================
+      initialRoute: '/',
+      routes: {'/': (_) => const NotesPage()},
+
+      // ======================================================
+      // OPTIONAL: GLOBAL NAV KEY (useful for sync-driven flows)
+      // ======================================================
+      navigatorKey: GlobalKey<NavigatorState>(),
     );
   }
 }

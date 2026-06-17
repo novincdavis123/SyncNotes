@@ -70,7 +70,11 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
           syncStatus: SyncStatus.pending,
         );
 
-    context.read<NotesBloc>().add(SaveNoteEvent(note: note));
+    if (widget.note == null) {
+      context.read<NotesBloc>().add(CreateNoteEvent(note: note));
+    } else {
+      context.read<NotesBloc>().add(UpdateNoteEvent(note: note));
+    }
 
     if (mounted) Navigator.pop(context);
   }

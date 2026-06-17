@@ -11,9 +11,7 @@ import 'notes_state.dart';
 
 class NotesBloc extends Bloc<NotesEvent, NotesState> {
   final GetNotesUseCase getNotesUseCase;
-
   final SaveNoteUseCase saveNoteUseCase;
-
   final DeleteNoteUseCase deleteNoteUseCase;
 
   NotesBloc({
@@ -22,22 +20,30 @@ class NotesBloc extends Bloc<NotesEvent, NotesState> {
     required this.deleteNoteUseCase,
   }) : super(const NotesInitial()) {
     on<LoadNotesEvent>(_onLoadNotes);
-
     on<RefreshNotesEvent>(_onRefreshNotes);
 
-    on<SaveNoteEvent>(_onSaveNote);
+    // ✅ FIXED: replace SaveNoteEvent
+    on<CreateNoteEvent>(_onCreateNote);
+    on<UpdateNoteEvent>(_onUpdateNote);
 
     on<DeleteNoteEvent>(_onDeleteNote);
   }
+
+  // =========================================================
+  // LOAD
+  // =========================================================
 
   Future<void> _onLoadNotes(
     LoadNotesEvent event,
     Emitter<NotesState> emit,
   ) async {
     emit(const NotesLoading());
-
     await _loadNotes(emit);
   }
+
+  // =========================================================
+  // REFRESH
+  // =========================================================
 
   Future<void> _onRefreshNotes(
     RefreshNotesEvent event,
@@ -54,25 +60,55 @@ class NotesBloc extends Bloc<NotesEvent, NotesState> {
     await _loadNotes(emit);
   }
 
-  Future<void> _onSaveNote(
-    SaveNoteEvent event,
+  // =========================================================
+  // CREATE
+  // =========================================================
+
+  Future<void> _onCreateNote(
+    CreateNoteEvent event,
     Emitter<NotesState> emit,
   ) async {
     try {
-      AppLogger.log("Save event triggered: ${event.note.id}");
+      AppLogger.log("➕ Create note: ${event.note.id}");
+
       await saveNoteUseCase(event.note);
-      AppLogger.success("Save usecase completed");
+
       await _loadNotes(emit);
     } catch (e) {
       emit(NotesError(message: e.toString(), previousNotes: _currentNotes));
     }
   }
 
+  // =========================================================
+  // UPDATE
+  // =========================================================
+
+  Future<void> _onUpdateNote(
+    UpdateNoteEvent event,
+    Emitter<NotesState> emit,
+  ) async {
+    try {
+      AppLogger.log("✏️ Update note: ${event.note.id}");
+
+      await saveNoteUseCase(event.note);
+
+      await _loadNotes(emit);
+    } catch (e) {
+      emit(NotesError(message: e.toString(), previousNotes: _currentNotes));
+    }
+  }
+
+  // =========================================================
+  // DELETE
+  // =========================================================
+
   Future<void> _onDeleteNote(
     DeleteNoteEvent event,
     Emitter<NotesState> emit,
   ) async {
     try {
+      AppLogger.log("🗑️ Delete note: ${event.id}");
+
       await deleteNoteUseCase(event.id);
 
       await _loadNotes(emit);
@@ -80,6 +116,10 @@ class NotesBloc extends Bloc<NotesEvent, NotesState> {
       emit(NotesError(message: e.toString(), previousNotes: _currentNotes));
     }
   }
+
+  // =========================================================
+  // LOAD CORE
+  // =========================================================
 
   Future<void> _loadNotes(Emitter<NotesState> emit) async {
     try {

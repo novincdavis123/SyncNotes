@@ -1,12 +1,17 @@
-import 'retry_policy.dart';
+import 'package:syncnotes/sync/retry/retry_policy.dart';
 
 Duration calculateDelay(RetryPolicy policy, int retryCount) {
-  final seconds =
-      policy.baseDelay.inSeconds * (policy.backoffMultiplier * retryCount);
+  final baseDelay = policy.baseDelay.inSeconds;
 
-  return Duration(seconds: seconds.toInt());
+  // exponential backoff
+  final exponential = baseDelay * (1 << retryCount);
+
+  // cap delay
+  final capped = exponential.clamp(baseDelay, policy.maxDelay.inSeconds);
+
+  return Duration(seconds: capped + _jitter());
 }
 
-bool shouldRetry(int retryCount, RetryPolicy policy) {
-  return retryCount < policy.maxRetries;
+int _jitter() {
+  return DateTime.now().millisecond % 3; // small randomness (0–2 sec)
 }

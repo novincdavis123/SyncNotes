@@ -19,6 +19,12 @@ class NoteSyncBadge extends StatelessWidget {
 
       case SyncStatus.conflict:
         return Colors.purple;
+
+      case SyncStatus.syncing:
+        return Colors.blue;
+
+      case SyncStatus.offline:
+        return Colors.grey;
     }
   }
 
@@ -35,18 +41,23 @@ class NoteSyncBadge extends StatelessWidget {
 
       case SyncStatus.conflict:
         return "Conflict";
+
+      case SyncStatus.syncing:
+        return "Syncing";
+
+      case SyncStatus.offline:
+        return "Offline";
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final color = _color(syncStatus);
+
     return Chip(
       label: Text(_label(syncStatus)),
-      backgroundColor: _color(syncStatus).withOpacity(0.15),
-      labelStyle: TextStyle(
-        color: _color(syncStatus),
-        fontWeight: FontWeight.w600,
-      ),
+      backgroundColor: color.withOpacity(0.15),
+      labelStyle: TextStyle(color: color, fontWeight: FontWeight.w600),
     );
   }
 }

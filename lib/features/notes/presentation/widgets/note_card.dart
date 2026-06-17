@@ -12,9 +12,53 @@ class NoteCard extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
-  const NoteCard({super.key, required this.note, this.onTap, this.onLongPress});
+  // NEW: callbacks for delete & edit
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  const NoteCard({
+    super.key,
+    required this.note,
+    this.onTap,
+    this.onLongPress,
+    this.onEdit,
+    this.onDelete,
+  });
 
   bool get hasConflict => note.syncStatus == SyncStatus.conflict.name;
+
+  void _showActions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (_) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text("Edit"),
+                onTap: () {
+                  Navigator.pop(context);
+                  onEdit?.call();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text(
+                  "Delete",
+                  style: TextStyle(color: Colors.red),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  onDelete?.call();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,16 +75,19 @@ class NoteCard extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        onLongPress: onLongPress,
+
+        // TAP → EDIT
+        onTap: onEdit,
+
+        // LONG PRESS → ACTIONS
+        onLongPress: () => _showActions(context),
+
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ======================================================
               // HEADER
-              // ======================================================
               Row(
                 children: [
                   Expanded(
@@ -53,55 +100,14 @@ class NoteCard extends StatelessWidget {
                       ),
                     ),
                   ),
-
                   const SizedBox(width: 8),
-
                   NoteSyncBadge(syncStatus: note.syncStatus),
                 ],
               ),
 
-              // ======================================================
-              // CONFLICT BANNER
-              // ======================================================
-              if (hasConflict) ...[
-                const SizedBox(height: 10),
-
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        Icons.warning_amber_rounded,
-                        color: Colors.orange,
-                        size: 18,
-                      ),
-
-                      SizedBox(width: 8),
-
-                      Expanded(
-                        child: Text(
-                          "Conflict detected. Tap to resolve.",
-                          style: TextStyle(
-                            color: Colors.orange,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
               const SizedBox(height: 10),
 
-              // ======================================================
               // BODY
-              // ======================================================
               Text(
                 note.body,
                 maxLines: 3,
@@ -111,9 +117,7 @@ class NoteCard extends StatelessWidget {
 
               const SizedBox(height: 12),
 
-              // ======================================================
               // FOOTER
-              // ======================================================
               Row(
                 children: [
                   Expanded(
@@ -122,7 +126,6 @@ class NoteCard extends StatelessWidget {
                       style: theme.textTheme.bodySmall,
                     ),
                   ),
-
                   if (hasConflict)
                     const Icon(
                       Icons.sync_problem,

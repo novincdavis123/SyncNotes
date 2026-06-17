@@ -36,21 +36,23 @@ class ConflictResolutionService {
     try {
       switch (strategy) {
         case ConflictResolutionStrategy.keepLocal:
-          await keepLocal(conflict);
+          await _keepLocal(conflict);
           break;
 
         case ConflictResolutionStrategy.keepServer:
-          await keepServer(conflict);
+          await _keepServer(conflict);
           break;
 
         case ConflictResolutionStrategy.merge:
-          await merge(conflict);
+          await _merge(conflict);
           break;
       }
     } catch (e) {
       AppLogger.error("Conflict resolution failed", e);
 
-      eventBus.emit(SyncEvent.error("Failed to resolve conflict"));
+      eventBus.emit(
+        SyncEvent.error("Conflict resolution failed: ${e.toString()}"),
+      );
 
       rethrow;
     }
@@ -60,8 +62,8 @@ class ConflictResolutionService {
   // KEEP LOCAL
   // ============================================================
 
-  Future<void> keepLocal(ConflictModel conflict) async {
-    AppLogger.log("🟢 Keeping local version");
+  Future<void> _keepLocal(ConflictModel conflict) async {
+    AppLogger.log("🟢 Keep local version");
 
     final local = conflict.localNote;
 
@@ -89,8 +91,8 @@ class ConflictResolutionService {
   // KEEP SERVER
   // ============================================================
 
-  Future<void> keepServer(ConflictModel conflict) async {
-    AppLogger.log("🔵 Keeping server version");
+  Future<void> _keepServer(ConflictModel conflict) async {
+    AppLogger.log("🔵 Keep server version");
 
     final server = conflict.serverNote;
 
@@ -112,24 +114,21 @@ class ConflictResolutionService {
   // MERGE
   // ============================================================
 
-  Future<void> merge(ConflictModel conflict) async {
+  Future<void> _merge(ConflictModel conflict) async {
     AppLogger.log("🟣 Merging versions");
 
     final local = conflict.localNote;
     final server = conflict.serverNote;
 
-    final mergedTitle = local.title.length >= server.title.length
+    final mergedTitle = (local.title.length >= server.title.length)
         ? local.title
         : server.title;
 
-    final mergedBody =
-        '''
-${local.body}
-
--------------------------
-
-${server.body}
-''';
+    final mergedBody = [
+      local.body,
+      "-------------------------",
+      server.body,
+    ].join("\n");
 
     final mergedNote = local.copyWith(
       title: mergedTitle,
@@ -154,15 +153,15 @@ ${server.body}
   }
 
   // ============================================================
-  // REMOVE CONFLICT OPERATION
+  // CLEANUP CONFLICT OPERATION
   // ============================================================
 
   Future<void> _removeConflictOperation(String noteId) async {
     final operations = await syncLocalDataSource.getOperations();
 
-    for (final operation in operations) {
-      if (operation.noteId == noteId && operation.status == "conflict") {
-        await syncLocalDataSource.removeOperation(operation.id);
+    for (final op in operations) {
+      if (op.noteId == noteId && op.status == "conflict") {
+        await syncLocalDataSource.removeOperation(op.id);
       }
     }
   }

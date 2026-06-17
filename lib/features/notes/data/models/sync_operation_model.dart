@@ -7,19 +7,16 @@ class SyncOperationModel extends HiveObject {
   @HiveField(0)
   final String id;
 
-  /// Note ID
   @HiveField(1)
   final String noteId;
 
-  /// create / update / delete
   @HiveField(2)
   final String type;
 
-  /// Local operation timestamp
   @HiveField(3)
   final DateTime timestamp;
 
-  /// pending / synced / failed / conflict
+  /// FIXED: use enum-safe string but future-proof
   @HiveField(4)
   final String status;
 
@@ -32,11 +29,9 @@ class SyncOperationModel extends HiveObject {
   @HiveField(7)
   final bool isInProgress;
 
-  /// Step 7: Note title
   @HiveField(8)
   final String title;
 
-  /// Step 7: Note body
   @HiveField(9)
   final String body;
 
@@ -52,6 +47,10 @@ class SyncOperationModel extends HiveObject {
     required this.title,
     required this.body,
   });
+
+  // =========================================================
+  // COPY WITH (SAFE UPDATES)
+  // =========================================================
 
   SyncOperationModel copyWith({
     String? status,
@@ -75,13 +74,25 @@ class SyncOperationModel extends HiveObject {
     );
   }
 
-  /// Convenient serialization for conflict detection
+  // =========================================================
+  // SAFE MAP (FIXED FOR CONFLICT + API)
+  // =========================================================
+
   Map<String, dynamic> toMap() {
     return {
-      'id': noteId,
+      'id': id, // FIXED (was noteId)
+      'noteId': noteId,
       'title': title,
       'body': body,
-      'updatedAt': timestamp.toIso8601String(),
+      'updatedAt': timestamp.toUtc().toIso8601String(),
     };
   }
+
+  // =========================================================
+  // HELPER (OPTIONAL BUT USEFUL)
+  // =========================================================
+
+  bool get isFailed => status == 'failed';
+  bool get isConflict => status == 'conflict';
+  bool get isPending => status == 'pending';
 }

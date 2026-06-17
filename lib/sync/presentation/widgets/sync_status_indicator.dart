@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:syncnotes/core/enums/sync_status_state.dart';
+import 'package:syncnotes/core/enums/sync_status.dart';
 import 'package:syncnotes/di/injection.dart';
 import 'package:syncnotes/sync/monitoring/sync_status_service.dart';
 
@@ -11,11 +11,11 @@ class SyncStatusIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final syncStatusService = sl<SyncStatusService>();
 
-    return StreamBuilder<SyncStatusState>(
+    return StreamBuilder<SyncStatus>(
       stream: syncStatusService.statusStream,
       initialData: syncStatusService.currentStatus,
       builder: (context, snapshot) {
-        final status = snapshot.data ?? SyncStatusState.idle;
+        final status = snapshot.data ?? SyncStatus.pending;
 
         final color = _colorForStatus(status);
 
@@ -41,9 +41,7 @@ class SyncStatusIndicator extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(_iconForStatus(status), size: 18, color: color),
-
                 const SizedBox(width: 8),
-
                 Text(
                   _labelForStatus(status),
                   style: TextStyle(
@@ -60,60 +58,81 @@ class SyncStatusIndicator extends StatelessWidget {
     );
   }
 
-  IconData _iconForStatus(SyncStatusState status) {
+  // ============================================================
+  // ICONS
+  // ============================================================
+
+  IconData _iconForStatus(SyncStatus status) {
     switch (status) {
-      case SyncStatusState.idle:
+      case SyncStatus.pending:
         return Icons.pause_circle_outline;
 
-      case SyncStatusState.syncing:
+      case SyncStatus.syncing:
         return Icons.sync;
 
-      case SyncStatusState.success:
+      case SyncStatus.synced:
         return Icons.check_circle_outline;
 
-      case SyncStatusState.offline:
+      case SyncStatus.offline:
         return Icons.cloud_off_outlined;
 
-      case SyncStatusState.error:
+      case SyncStatus.failed:
         return Icons.error_outline;
+
+      case SyncStatus.conflict:
+        return Icons.warning_amber_outlined;
     }
   }
 
-  String _labelForStatus(SyncStatusState status) {
-    switch (status) {
-      case SyncStatusState.idle:
-        return 'Idle';
+  // ============================================================
+  // LABELS
+  // ============================================================
 
-      case SyncStatusState.syncing:
+  String _labelForStatus(SyncStatus status) {
+    switch (status) {
+      case SyncStatus.pending:
+        return 'Pending';
+
+      case SyncStatus.syncing:
         return 'Syncing...';
 
-      case SyncStatusState.success:
+      case SyncStatus.synced:
         return 'Synced';
 
-      case SyncStatusState.offline:
+      case SyncStatus.offline:
         return 'Offline';
 
-      case SyncStatusState.error:
+      case SyncStatus.failed:
         return 'Sync Failed';
+
+      case SyncStatus.conflict:
+        return 'Conflict';
     }
   }
 
-  Color _colorForStatus(SyncStatusState status) {
+  // ============================================================
+  // COLORS
+  // ============================================================
+
+  Color _colorForStatus(SyncStatus status) {
     switch (status) {
-      case SyncStatusState.idle:
+      case SyncStatus.pending:
         return Colors.grey;
 
-      case SyncStatusState.syncing:
+      case SyncStatus.syncing:
         return Colors.blue;
 
-      case SyncStatusState.success:
+      case SyncStatus.synced:
         return Colors.green;
 
-      case SyncStatusState.offline:
+      case SyncStatus.offline:
         return Colors.orange;
 
-      case SyncStatusState.error:
+      case SyncStatus.failed:
         return Colors.red;
+
+      case SyncStatus.conflict:
+        return Colors.purple;
     }
   }
 }

@@ -1,5 +1,6 @@
 import 'package:syncnotes/app/app_logger.dart';
 import 'package:syncnotes/core/enums/sync_status.dart';
+import 'package:syncnotes/di/injection.dart';
 import 'package:syncnotes/features/notes/data/datasource/local/notes_local_datasource.dart';
 import 'package:syncnotes/features/notes/data/datasource/local/sync_local_datasource.dart';
 import 'package:syncnotes/features/notes/data/mapper/note_mapper.dart';
@@ -7,6 +8,7 @@ import 'package:syncnotes/features/notes/data/models/sync_operation_model.dart';
 import 'package:syncnotes/features/notes/domain/entities/note_entity.dart';
 import 'package:syncnotes/features/notes/domain/entities/sync_operation_type.dart';
 import 'package:syncnotes/features/notes/domain/repositories/notes_repository.dart';
+import 'package:syncnotes/sync/sync_engine.dart';
 import 'package:uuid/uuid.dart';
 
 class NotesRepositoryImpl implements NotesRepository {
@@ -40,9 +42,16 @@ class NotesRepositoryImpl implements NotesRepository {
   Future<void> saveNote(NoteEntity note) async {
     AppLogger.sync("Adding operation for note: ${note.id}");
 
+    final existing = await localDataSource.getNoteById(note.id);
+
     await localDataSource.saveNote(note.toModel());
 
-    await _addSync(note: note, type: SyncOperationType.create);
+    await _addSync(
+      note: note,
+      type: existing == null
+          ? SyncOperationType.create
+          : SyncOperationType.update,
+    );
   }
 
   @override
@@ -88,5 +97,7 @@ class NotesRepositoryImpl implements NotesRepository {
         body: note.body,
       ),
     );
+    AppLogger.sync("Queue updated");
+    sl<SyncEngine>().markDirty();
   }
 }

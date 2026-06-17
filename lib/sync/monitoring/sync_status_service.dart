@@ -1,39 +1,37 @@
 import 'dart:async';
 
-import 'package:syncnotes/core/enums/sync_status_state.dart';
+import 'package:syncnotes/core/enums/sync_status.dart';
 
 class SyncStatusService {
-  final StreamController<SyncStatusState> _controller =
-      StreamController<SyncStatusState>.broadcast();
+  final StreamController<SyncStatus> _controller =
+      StreamController<SyncStatus>.broadcast();
 
-  SyncStatusState _currentStatus = SyncStatusState.idle;
+  SyncStatus _currentStatus = SyncStatus.pending;
 
-  // ------------------------------------------------------------
+  // ============================================================
   // CURRENT STATUS
-  // ------------------------------------------------------------
+  // ============================================================
 
-  SyncStatusState get currentStatus => _currentStatus;
+  SyncStatus get currentStatus => _currentStatus;
 
-  // ------------------------------------------------------------
+  // ============================================================
   // INITIAL STATUS
-  // ------------------------------------------------------------
+  // ============================================================
 
-  SyncStatusState get initialStatus => SyncStatusState.idle;
+  SyncStatus get initialStatus => SyncStatus.pending;
 
-  // ------------------------------------------------------------
+  // ============================================================
   // STATUS STREAM
-  // ------------------------------------------------------------
+  // ============================================================
 
-  Stream<SyncStatusState> get statusStream => _controller.stream;
+  Stream<SyncStatus> get statusStream => _controller.stream;
 
-  // ------------------------------------------------------------
+  // ============================================================
   // UPDATE STATUS
-  // ------------------------------------------------------------
+  // ============================================================
 
-  void updateStatus(SyncStatusState status) {
-    if (_currentStatus == status) {
-      return;
-    }
+  void updateStatus(SyncStatus status) {
+    if (_currentStatus == status) return;
 
     _currentStatus = status;
 
@@ -42,17 +40,17 @@ class SyncStatusService {
     }
   }
 
-  // ------------------------------------------------------------
-  // RESET STATUS
-  // ------------------------------------------------------------
+  // ============================================================
+  // RESET
+  // ============================================================
 
   void reset() {
-    updateStatus(SyncStatusState.idle);
+    updateStatus(SyncStatus.pending);
   }
 
-  // ------------------------------------------------------------
+  // ============================================================
   // CLEANUP
-  // ------------------------------------------------------------
+  // ============================================================
 
   void dispose() {
     _controller.close();

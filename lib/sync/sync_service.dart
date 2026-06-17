@@ -12,6 +12,8 @@ import 'package:syncnotes/sync/retry/sync_failure_type.dart';
 
 import 'package:syncnotes/sync/sync_event.dart';
 import 'package:syncnotes/sync/sync_event_bus.dart';
+import 'package:syncnotes/sync/history/sync_history_repository.dart';
+import 'package:syncnotes/core/enums/sync_status.dart';
 
 class SyncService {
   final SyncLocalDataSource localDataSource;
@@ -20,6 +22,7 @@ class SyncService {
   final SyncMetricsService metricsService;
   final SyncEventBus eventBus;
   final RetryPolicy retryPolicy;
+  final SyncHistoryRepository historyRepository;
 
   bool _isRunning = false;
 
@@ -33,15 +36,19 @@ class SyncService {
     this.notesLocalDataSource,
     this.apiService,
     this.metricsService,
-    this.eventBus, {
+    this.eventBus,
+    this.historyRepository, {
     this.retryPolicy = const RetryPolicy(),
   });
+
+  // ============================================================
+  // STEP 2: PROCESS QUEUE (STABLE FINAL VERSION)
+  // ============================================================
 
   Future<void> processQueue() async {
     if (_isRunning) return;
 
     _isRunning = true;
-
     eventBus.emit(SyncEvent.started());
 
     try {
@@ -52,27 +59,34 @@ class SyncService {
         return;
       }
 
-      final batch = _sortOperations(
-        operations.where((e) => !e.isInProgress).toList(),
-      ).take(10).toList();
+      final pendingOps = operations
+          .where((e) => !e.isInProgress)
+          .toList(growable: false);
+
+      final batch = _sortOperations(pendingOps).take(10).toList();
 
       for (final operation in batch) {
         try {
           await _processSingleOperation(operation);
         } catch (e) {
+          AppLogger.error("Sync operation failed", e);
           eventBus.emit(SyncEvent.error(e.toString()));
         }
       }
 
       metricsService.printStatistics();
-
       eventBus.emit(SyncEvent.completed());
     } catch (e) {
+      AppLogger.error("Sync queue failed", e);
       eventBus.emit(SyncEvent.error(e.toString()));
     } finally {
       _isRunning = false;
     }
   }
+
+  // ============================================================
+  // SAFE SORTING
+  // ============================================================
 
   List<SyncOperationModel> _sortOperations(
     List<SyncOperationModel> operations,
@@ -80,14 +94,8 @@ class SyncService {
     final sorted = List<SyncOperationModel>.from(operations);
 
     sorted.sort((a, b) {
-      if (a.status != b.status) {
-        if (a.status == "pending") return -1;
-        if (b.status == "pending") return 1;
-      }
-
-      if (a.retryCount != b.retryCount) {
-        return a.retryCount.compareTo(b.retryCount);
-      }
+      final retryCompare = a.retryCount.compareTo(b.retryCount);
+      if (retryCompare != 0) return retryCompare;
 
       return a.timestamp.compareTo(b.timestamp);
     });
@@ -95,9 +103,12 @@ class SyncService {
     return sorted;
   }
 
+  // ============================================================
+  // SINGLE OPERATION
+  // ============================================================
+
   Future<void> _processSingleOperation(SyncOperationModel operation) async {
     if (_processingIds.contains(operation.id)) return;
-
     if (_activeTasks >= _maxConcurrentTasks) return;
 
     _processingIds.add(operation.id);
@@ -111,6 +122,10 @@ class SyncService {
     }
   }
 
+  // ============================================================
+  // CORE SYNC LOGIC
+  // ============================================================
+
   Future<void> _processInternal(SyncOperationModel operation) async {
     bool synced = false;
 
@@ -121,9 +136,9 @@ class SyncService {
 
       eventBus.emit(SyncEvent.operationStarted(operation.id));
 
-      // =====================================================
-      // STEP 8 REAL CONFLICT DETECTION
-      // =====================================================
+      // -----------------------------
+      // CONFLICT DETECTION (SAFE)
+      // -----------------------------
 
       final localNote = await notesLocalDataSource.getNoteById(
         operation.noteId,
@@ -134,9 +149,12 @@ class SyncService {
       if (localNote != null && serverNote != null) {
         final localTime = localNote.lastModifiedAt.toUtc();
 
-        final serverTime = DateTime.parse(serverNote["updatedAt"]).toUtc();
+        final serverTimeStr = serverNote["updatedAt"]?.toString();
+        final serverTime = serverTimeStr != null
+            ? DateTime.tryParse(serverTimeStr)
+            : null;
 
-        if (serverTime.isAfter(localTime)) {
+        if (serverTime != null && serverTime.toUtc().isAfter(localTime)) {
           eventBus.emit(
             SyncEvent.conflictDetected(
               id: operation.id,
@@ -155,16 +173,19 @@ class SyncService {
           await localDataSource.addOperation(
             operation.copyWith(status: "conflict", isInProgress: false),
           );
-
+          await historyRepository.addHistoryFromOperation(
+            operation,
+            status: SyncStatus.conflict,
+            hadConflict: true,
+          );
           AppLogger.log("⚠️ Conflict detected ${operation.id}");
-
           return;
         }
       }
 
-      // =====================================================
-      // NORMAL SYNC
-      // =====================================================
+      // -----------------------------
+      // PUSH TO SERVER
+      // -----------------------------
 
       final success = await apiService.pushToServer(operation);
 
@@ -173,24 +194,27 @@ class SyncService {
 
         metricsService.recordSuccess();
 
+        await historyRepository.addHistoryFromOperation(
+          operation,
+          status: SyncStatus.synced,
+        );
+
         eventBus.emit(SyncEvent.operationSuccess(operation.id));
 
         await localDataSource.removeOperation(operation.id);
 
         AppLogger.success("✅ Synced ${operation.id}");
-
         return;
       }
 
       metricsService.recordFailure();
-
       await _handleFailure(operation, SyncFailureType.server);
     } catch (e) {
+      AppLogger.error("Sync error ${operation.id}", e);
+
       metricsService.recordFailure();
 
       await _handleFailure(operation, SyncFailureType.network);
-
-      AppLogger.error("Sync error ${operation.id}", e);
     } finally {
       if (!synced) {
         await localDataSource.addOperation(
@@ -199,6 +223,10 @@ class SyncService {
       }
     }
   }
+
+  // ============================================================
+  // FAILURE HANDLING
+  // ============================================================
 
   Future<void> _handleFailure(
     SyncOperationModel operation,
@@ -218,6 +246,12 @@ class SyncService {
         operation.copyWith(status: "failed", isInProgress: false),
       );
 
+      await historyRepository.addHistoryFromOperation(
+        operation,
+        status: SyncStatus.failed,
+        errorMessage: "Operation permanently failed",
+      );
+
       return;
     }
 
@@ -232,7 +266,10 @@ class SyncService {
         delay: delay,
       ),
     );
-
+    await historyRepository.addHistoryFromOperation(
+      operation,
+      status: SyncStatus.pending,
+    );
     await Future.delayed(delay);
 
     await localDataSource.addOperation(
@@ -244,6 +281,10 @@ class SyncService {
       ),
     );
   }
+
+  // ============================================================
+  // RECOVERY
+  // ============================================================
 
   Future<void> recoverStuckOperations() async {
     final operations = await localDataSource.getOperations();
