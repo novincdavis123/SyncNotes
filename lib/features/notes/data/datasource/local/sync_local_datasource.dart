@@ -1,5 +1,5 @@
 import 'package:syncnotes/features/notes/data/models/sync_operation_model.dart';
-import 'package:syncnotes/sync/history/sync_history_model.dart';
+import 'package:syncnotes/sync_manager/history/sync_history_model.dart';
 
 /// ============================================================
 /// SyncLocalDataSource (FINAL CLEAN CONTRACT)
@@ -14,6 +14,12 @@ abstract class SyncLocalDataSource {
   Future<List<SyncOperationModel>> getOperations();
 
   Future<void> removeOperation(String id);
+
+  /// 🔥 NEW: used by repository / cleanup / retry logic
+  Future<void> deleteOperation(String id);
+
+  /// 🔥 NEW: remove all operations for a note (important for delete + conflict recovery)
+  Future<void> removeOperationsForNote(String noteId);
 
   // ============================================================
   // HISTORY

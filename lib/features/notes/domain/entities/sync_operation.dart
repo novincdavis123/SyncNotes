@@ -8,7 +8,7 @@ class SyncOperation {
   final String status;
 
   // ============================================================
-  // STEP 7 RETRY & RECOVERY
+  // RETRY & RECOVERY
   // ============================================================
 
   final int retryCount;
@@ -16,7 +16,7 @@ class SyncOperation {
   final bool isInProgress;
 
   // ============================================================
-  // STEP 7 CONFLICT RESOLUTION DATA
+  // CONFLICT RESOLUTION DATA
   // ============================================================
 
   final String title;

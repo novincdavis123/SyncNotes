@@ -25,13 +25,14 @@ class NoteModelAdapter extends TypeAdapter<NoteModel> {
       lastSyncedAt: fields[5] as DateTime?,
       isDeleted: fields[6] as bool,
       syncStatus: fields[7] as String,
+      conflictResolution: fields[8] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, NoteModel obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -47,7 +48,9 @@ class NoteModelAdapter extends TypeAdapter<NoteModel> {
       ..writeByte(6)
       ..write(obj.isDeleted)
       ..writeByte(7)
-      ..write(obj.syncStatus);
+      ..write(obj.syncStatus)
+      ..writeByte(8)
+      ..write(obj.conflictResolution);
   }
 
   @override

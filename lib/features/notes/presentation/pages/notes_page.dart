@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:syncnotes/core/network/fake_api_service.dart';
 
 import 'package:syncnotes/features/notes/presentation/widgets/empty_notes.dart';
-import 'package:syncnotes/sync/presentation/widgets/sync_status_indicator.dart';
+import 'package:syncnotes/sync_manager/presentation/widgets/sync_status_indicator.dart';
 
 import '../bloc/notes_bloc.dart';
 import '../bloc/notes_event.dart';
@@ -10,6 +11,7 @@ import '../bloc/notes_state.dart';
 
 import '../widgets/note_card.dart';
 import 'add_edit_note_page.dart';
+import 'package:syncnotes/di/injection.dart';
 
 class NotesPage extends StatelessWidget {
   const NotesPage({super.key});
@@ -32,11 +34,25 @@ class NotesPage extends StatelessWidget {
         title: const Text("Sync Notes"),
         centerTitle: true,
         actions: [
+          // 🧪 TEMP DEBUG BUTTON (SERVER CHANGE SIMULATOR)
           IconButton(
-            tooltip: "Refresh",
-            icon: const Icon(Icons.refresh),
+            tooltip: "Simulate Server Change",
+            icon: const Icon(Icons.cloud_sync),
             onPressed: () {
-              context.read<NotesBloc>().add(const RefreshNotesEvent());
+              final apiService = sl<FakeApiService>();
+
+              // pick a note id safely (first note if exists)
+              final state = context.read<NotesBloc>().state;
+
+              if (state is NotesLoaded && state.notes.isNotEmpty) {
+                final noteId = state.notes.first.id;
+                // "Simulate Server Update"
+                apiService.updateServerNote(
+                  noteId,
+                  "Server Edit",
+                  "Server Changed Body",
+                );
+              }
             },
           ),
         ],

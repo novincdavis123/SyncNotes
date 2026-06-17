@@ -16,10 +16,17 @@ final class LoadNotesEvent extends NotesEvent {
 }
 
 // =========================================================
-// REFRESH
+// REFRESH (manual UI refresh)
 // =========================================================
 final class RefreshNotesEvent extends NotesEvent {
   const RefreshNotesEvent();
+}
+
+// =========================================================
+// 🔥 SYNC REFRESH (NEW - used after conflict resolution)
+// =========================================================
+final class SyncRefreshEvent extends NotesEvent {
+  const SyncRefreshEvent();
 }
 
 // =========================================================

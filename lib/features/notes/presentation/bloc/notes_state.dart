@@ -33,11 +33,15 @@ final class NotesLoaded extends NotesState {
   final bool isSaving;
   final bool isDeleting;
 
+  // 🔥 NEW: prevents stale UI after sync/conflict resolution
+  final bool isSyncing;
+
   const NotesLoaded({
     required this.notes,
     this.isRefreshing = false,
     this.isSaving = false,
     this.isDeleting = false,
+    this.isSyncing = false,
   });
 
   NotesLoaded copyWith({
@@ -45,17 +49,25 @@ final class NotesLoaded extends NotesState {
     bool? isRefreshing,
     bool? isSaving,
     bool? isDeleting,
+    bool? isSyncing,
   }) {
     return NotesLoaded(
       notes: notes ?? this.notes,
       isRefreshing: isRefreshing ?? this.isRefreshing,
       isSaving: isSaving ?? this.isSaving,
       isDeleting: isDeleting ?? this.isDeleting,
+      isSyncing: isSyncing ?? this.isSyncing,
     );
   }
 
   @override
-  List<Object?> get props => [notes, isRefreshing, isSaving, isDeleting];
+  List<Object?> get props => [
+    notes,
+    isRefreshing,
+    isSaving,
+    isDeleting,
+    isSyncing,
+  ];
 }
 
 // =========================================================
@@ -72,8 +84,7 @@ final class NotesError extends NotesState {
 }
 
 // =========================================================
-// OPTIONAL (IMPORTANT FOR YOUR ASSIGNMENT)
-// CONFLICT STATE (future-ready)
+// CONFLICT STATE
 // =========================================================
 final class NotesConflict extends NotesState {
   final NoteEntity local;
@@ -83,4 +94,16 @@ final class NotesConflict extends NotesState {
 
   @override
   List<Object?> get props => [local, remote];
+}
+
+// =========================================================
+// 🔥 SYNC SUCCESS STATE (IMPORTANT ADDITION)
+// =========================================================
+final class NotesSyncSuccess extends NotesState {
+  final List<NoteEntity> notes;
+
+  const NotesSyncSuccess({required this.notes});
+
+  @override
+  List<Object?> get props => [notes];
 }

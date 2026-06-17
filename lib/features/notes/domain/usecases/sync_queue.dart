@@ -6,6 +6,6 @@ class SyncQueueUseCase {
   SyncQueueUseCase(this.repository);
 
   Future<void> call() async {
-    await repository.sync(); // we will implement next
+    await repository.sync();
   }
 }

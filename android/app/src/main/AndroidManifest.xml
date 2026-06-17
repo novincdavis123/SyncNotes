@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+   
+   <!-- INTERNET ACCESS -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- CHECK NETWORK STATUS -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <application
         android:label="syncnotes"
         android:name="${applicationName}"

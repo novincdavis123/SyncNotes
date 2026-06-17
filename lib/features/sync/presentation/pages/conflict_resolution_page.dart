@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:syncnotes/sync/conflict/conflict_model.dart';
-import 'package:syncnotes/sync/conflict/conflict_resolution_strategy.dart';
+import 'package:syncnotes/features/conflict/data/models/conflict_model.dart';
+import 'package:syncnotes/features/conflict/domain/enums/conflict_resolution_strategy.dart';
 
 class ConflictResolutionPage extends StatelessWidget {
   final ConflictModel conflict;

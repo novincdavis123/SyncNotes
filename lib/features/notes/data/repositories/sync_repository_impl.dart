@@ -2,7 +2,7 @@ import 'package:syncnotes/features/notes/data/datasource/local/sync_local_dataso
 import 'package:syncnotes/features/notes/data/mapper/sync_mapper.dart';
 import 'package:syncnotes/features/notes/domain/entities/sync_operation.dart';
 import 'package:syncnotes/features/notes/domain/repositories/sync_repository.dart';
-import 'package:syncnotes/sync/sync_service.dart';
+import 'package:syncnotes/features/sync/service/sync_service.dart';
 import 'package:syncnotes/core/enums/sync_status.dart';
 
 class SyncRepositoryImpl implements SyncRepository {

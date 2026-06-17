@@ -1,33 +1,53 @@
 import 'dart:async';
 
+import 'package:syncnotes/app/app_logger.dart';
 import 'package:syncnotes/features/notes/data/models/sync_operation_model.dart';
 
 class FakeApiService {
   FakeApiService();
 
   /// ==========================================================
-  /// Fake Remote Database
+  /// FAKE SERVER DB
   /// ==========================================================
 
   final Map<String, Map<String, dynamic>> _serverNotes = {};
 
   /// ==========================================================
-  /// PUSH TO SERVER
+  /// PUSH TO SERVER (SYNC OPERATION)
   /// ==========================================================
 
   Future<bool> pushToServer(SyncOperationModel operation) async {
     await Future.delayed(const Duration(milliseconds: 500));
 
-    final existing = _serverNotes[operation.noteId];
+    AppLogger.log("🌐 PUSH → server: ${operation.noteId}");
 
     _serverNotes[operation.noteId] = {
       "id": operation.noteId,
-      "title": existing?["title"] ?? "Note ${operation.noteId}",
-      "body": existing?["body"] ?? "",
+      "title": operation.title ?? "",
+      "body": operation.body ?? "",
       "updatedAt": DateTime.now().toUtc().toIso8601String(),
     };
 
+    AppLogger.success("✅ Server updated: ${operation.noteId}");
+
     return true;
+  }
+
+  /// ==========================================================
+  /// MANUAL SERVER UPDATE (FOR CONFLICT SIMULATION)
+  /// ==========================================================
+
+  void updateServerNote(String id, String title, String body) {
+    AppLogger.log("🛠 SERVER MANUAL UPDATE: $id");
+
+    _serverNotes[id] = {
+      "id": id,
+      "title": title,
+      "body": body,
+      "updatedAt": DateTime.now().toUtc().toIso8601String(),
+    };
+
+    AppLogger.success("🔵 Server forced change applied");
   }
 
   /// ==========================================================
@@ -37,11 +57,14 @@ class FakeApiService {
   Future<Map<String, dynamic>?> fetchNote(String noteId) async {
     await Future.delayed(const Duration(milliseconds: 300));
 
-    if (!_serverNotes.containsKey(noteId)) {
+    final data = _serverNotes[noteId];
+
+    if (data == null) {
+      AppLogger.log("⚠️ Server note not found: $noteId");
       return null;
     }
 
-    return Map<String, dynamic>.from(_serverNotes[noteId]!);
+    return Map<String, dynamic>.from(data);
   }
 
   /// ==========================================================
@@ -50,6 +73,8 @@ class FakeApiService {
 
   Future<List<Map<String, dynamic>>> fetchAllNotes() async {
     await Future.delayed(const Duration(milliseconds: 300));
+
+    AppLogger.log("⬇️ Fetching all server notes: ${_serverNotes.length}");
 
     return _serverNotes.values
         .map((e) => Map<String, dynamic>.from(e))
@@ -63,14 +88,17 @@ class FakeApiService {
   Future<bool> deleteNote(String noteId) async {
     await Future.delayed(const Duration(milliseconds: 300));
 
-    _serverNotes.remove(noteId);
+    final removed = _serverNotes.remove(noteId);
+
+    if (removed != null) {
+      AppLogger.log("🗑️ Server deleted: $noteId");
+    }
 
     return true;
   }
 
   /// ==========================================================
-  /// UPSERT SERVER NOTE
-  /// Used by ConflictResolutionService
+  /// UPSERT SERVER NOTE (USED BY CONFLICT RESOLUTION)
   /// ==========================================================
 
   Future<void> saveServerNote({
@@ -86,11 +114,12 @@ class FakeApiService {
       "body": body,
       "updatedAt": DateTime.now().toUtc().toIso8601String(),
     };
+
+    AppLogger.success("💾 Conflict resolved → server updated: $noteId");
   }
 
   /// ==========================================================
-  /// UPDATE SERVER NOTE TIMESTAMP
-  /// Used to simulate conflicts
+  /// TOUCH NOTE (ONLY TIMESTAMP CHANGE → GREAT FOR CONFLICT TEST)
   /// ==========================================================
 
   Future<void> touchServerNote(String noteId) async {
@@ -100,12 +129,13 @@ class FakeApiService {
       _serverNotes[noteId]!["updatedAt"] = DateTime.now()
           .toUtc()
           .toIso8601String();
+
+      AppLogger.log("⏱️ Server timestamp updated: $noteId");
     }
   }
 
   /// ==========================================================
-  /// SEED TEST DATA
-  /// Useful during development
+  /// SEED DATA
   /// ==========================================================
 
   Future<void> seedNote({
@@ -120,23 +150,23 @@ class FakeApiService {
       "body": body,
       "updatedAt": (updatedAt ?? DateTime.now().toUtc()).toIso8601String(),
     };
+
+    AppLogger.log("🌱 Seeded server note: $noteId");
   }
 
   /// ==========================================================
   /// CHECK EXISTENCE
   /// ==========================================================
 
-  bool exists(String noteId) {
-    return _serverNotes.containsKey(noteId);
-  }
+  bool exists(String noteId) => _serverNotes.containsKey(noteId);
 
   /// ==========================================================
   /// CLEAR SERVER
-  /// Useful for testing
   /// ==========================================================
 
   Future<void> clearServer() async {
     _serverNotes.clear();
+    AppLogger.log("🧹 Server cleared");
   }
 
   /// ==========================================================
@@ -144,12 +174,12 @@ class FakeApiService {
   /// ==========================================================
 
   void printServerDatabase() {
-    print("========== SERVER ==========");
+    AppLogger.log("========== SERVER DB ==========");
 
     for (final entry in _serverNotes.entries) {
-      print(entry.value);
+      AppLogger.log(entry.value.toString());
     }
 
-    print("============================");
+    AppLogger.log("===============================");
   }
 }

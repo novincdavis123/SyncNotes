@@ -5,7 +5,14 @@ class DeleteNoteUseCase {
 
   const DeleteNoteUseCase(this.repository);
 
-  Future<void> call(String id) {
-    return repository.deleteNote(id);
+  Future<void> call(String id) async {
+    // 1. Delete note locally
+    await repository.deleteNote(id);
+
+    // 2. IMPORTANT: remove pending sync operations
+    await repository.removePendingOperationsForNote(id);
+
+    // 3. Mark as dirty so sync engine can re-evaluate state safely
+    await repository.markSyncDirty();
   }
 }

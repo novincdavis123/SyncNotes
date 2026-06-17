@@ -4,6 +4,7 @@ import 'package:hive_ce_flutter/adapters.dart';
 
 import 'package:syncnotes/core/network/connectivity_service.dart';
 import 'package:syncnotes/core/network/connectivity_service_impl.dart';
+import 'package:syncnotes/core/network/fake_api_service.dart';
 
 import 'package:syncnotes/features/notes/data/models/note_model.dart';
 import 'package:syncnotes/features/notes/data/models/sync_operation_model.dart';
@@ -13,6 +14,9 @@ import 'package:syncnotes/features/notes/data/datasource/local/notes_local_datas
 
 import 'package:syncnotes/features/notes/data/datasource/local/sync_local_datasource.dart';
 import 'package:syncnotes/features/notes/data/datasource/local/sync_local_datasource_impl.dart';
+
+import 'package:syncnotes/features/notes/data/datasource/remote/notes_remote_datasource.dart';
+import 'package:syncnotes/features/notes/data/datasource/remote/notes_remote_datasource_impl.dart';
 
 import 'package:syncnotes/features/notes/data/repositories/notes_repository_impl.dart';
 import 'package:syncnotes/features/notes/domain/repositories/notes_repository.dart';
@@ -30,21 +34,19 @@ import 'package:syncnotes/features/notes/presentation/bloc/notes_bloc.dart';
 import 'package:syncnotes/features/notes/presentation/bloc/note_editor_cubit.dart';
 import 'package:syncnotes/features/notes/presentation/bloc/delete_note_cubit.dart';
 
-import 'package:syncnotes/features/sync/data/services/fake_api_service.dart';
+import 'package:syncnotes/features/sync/engine/sync_engine.dart';
+import 'package:syncnotes/features/sync/service/sync_service.dart';
+import 'package:syncnotes/features/sync/events/sync_event_bus.dart';
 
-import 'package:syncnotes/sync/sync_engine.dart';
-import 'package:syncnotes/sync/sync_service.dart';
-import 'package:syncnotes/sync/sync_event_bus.dart';
+import 'package:syncnotes/sync_manager/monitoring/sync_status_service.dart';
+import 'package:syncnotes/sync_manager/monitoring/sync_queue_monitor.dart';
+import 'package:syncnotes/sync_manager/monitoring/sync_health_checker.dart';
+import 'package:syncnotes/sync_manager/monitoring/sync_metrics_service.dart';
 
-import 'package:syncnotes/sync/monitoring/sync_status_service.dart';
-import 'package:syncnotes/sync/monitoring/sync_queue_monitor.dart';
-import 'package:syncnotes/sync/monitoring/sync_health_checker.dart';
-import 'package:syncnotes/sync/monitoring/sync_metrics_service.dart';
-
-import 'package:syncnotes/sync/conflict/conflict_detector.dart';
-import 'package:syncnotes/sync/conflict/conflict_resolution_service.dart';
-import 'package:syncnotes/sync/history/sync_history_repository.dart';
-import 'package:syncnotes/sync/queue/sync_queue_analyzer.dart';
+import 'package:syncnotes/features/conflict/data/conflict_detector.dart';
+import 'package:syncnotes/features/conflict/data/conflict_resolution_service.dart';
+import 'package:syncnotes/sync_manager/history/sync_history_repository.dart';
+import 'package:syncnotes/sync_manager/queue/sync_queue_analyzer.dart';
 
 final sl = GetIt.instance;
 
@@ -55,42 +57,27 @@ Future<void> initDependencies() async {
 
   await Hive.initFlutter();
 
-  // adapters
   Hive.registerAdapter(NoteModelAdapter());
   Hive.registerAdapter(SyncOperationModelAdapter());
 
-  // ============================================================
-  // BOXES
-  // ============================================================
-
   final notesBox = await Hive.openBox<NoteModel>('notes_box');
   final syncBox = await Hive.openBox<SyncOperationModel>('sync_queue_box');
-
-  // ❗ IMPORTANT FIX:
-  // history is NOT Hive model → keep dynamic
   final historyBox = await Hive.openBox('sync_history_box');
 
-  // ============================================================
-  // REGISTER BOXES
-  // ============================================================
-
-  sl.registerLazySingleton<Box<NoteModel>>(() => notesBox);
-  sl.registerLazySingleton<Box<SyncOperationModel>>(() => syncBox);
-  sl.registerLazySingleton<Box>(() => historyBox);
+  sl.registerLazySingleton(() => notesBox);
+  sl.registerLazySingleton(() => syncBox);
+  sl.registerLazySingleton(() => historyBox);
 
   // ============================================================
   // LOCAL DATASOURCES
   // ============================================================
 
   sl.registerLazySingleton<NotesLocalDataSource>(
-    () => NotesLocalDataSourceImpl(sl<Box<NoteModel>>()),
+    () => NotesLocalDataSourceImpl(sl()),
   );
 
   sl.registerLazySingleton<SyncLocalDataSource>(
-    () => SyncLocalDataSourceImpl(
-      operationBox: sl<Box<SyncOperationModel>>(),
-      historyBox: sl<Box>(),
-    ),
+    () => SyncLocalDataSourceImpl(operationBox: sl(), historyBox: sl()),
   );
 
   // ============================================================
@@ -100,12 +87,21 @@ Future<void> initDependencies() async {
   sl.registerLazySingleton(() => Connectivity());
 
   sl.registerLazySingleton<ConnectivityService>(
-    () => ConnectivityServiceImpl(sl<Connectivity>()),
+    () => ConnectivityServiceImpl(sl()),
   );
 
+  // Fake server (ONLY SOURCE OF TRUTH for remote simulation)
   sl.registerLazySingleton<FakeApiService>(() => FakeApiService());
 
   sl.registerLazySingleton<SyncEventBus>(() => SyncEventBus());
+
+  // ============================================================
+  // REMOTE DATA SOURCE
+  // ============================================================
+
+  sl.registerLazySingleton<NotesRemoteDataSource>(
+    () => NotesRemoteDataSourceImpl(sl<FakeApiService>()),
+  );
 
   // ============================================================
   // MONITORING
@@ -114,13 +110,12 @@ Future<void> initDependencies() async {
   sl.registerLazySingleton(() => SyncStatusService());
   sl.registerLazySingleton(() => SyncMetricsService());
 
-  sl.registerLazySingleton(() => SyncQueueMonitor(sl<SyncLocalDataSource>()));
-  sl.registerLazySingleton(() => SyncHealthChecker(sl<SyncQueueMonitor>()));
+  sl.registerLazySingleton(() => SyncQueueMonitor(sl()));
+  sl.registerLazySingleton(() => SyncHealthChecker(sl()));
 
-  sl.registerLazySingleton(
-    () => SyncHistoryRepository(sl<SyncLocalDataSource>()),
-  );
-  sl.registerLazySingleton(() => SyncQueueAnalyzer(sl<SyncLocalDataSource>()));
+  sl.registerLazySingleton(() => SyncHistoryRepository(sl()));
+  sl.registerLazySingleton(() => SyncQueueAnalyzer(sl()));
+
   // ============================================================
   // CONFLICT SYSTEM
   // ============================================================
@@ -131,7 +126,7 @@ Future<void> initDependencies() async {
     () => ConflictResolutionService(
       notesLocalDataSource: sl<NotesLocalDataSource>(),
       syncLocalDataSource: sl<SyncLocalDataSource>(),
-      apiService: sl<FakeApiService>(),
+      apiService: sl<FakeApiService>(), // ✅ FIX ADDED
       eventBus: sl<SyncEventBus>(),
     ),
   );
@@ -144,34 +139,27 @@ Future<void> initDependencies() async {
     () => SyncService(
       sl<SyncLocalDataSource>(),
       sl<NotesLocalDataSource>(),
-      sl<FakeApiService>(),
+      sl<NotesRemoteDataSource>(),
       sl<SyncMetricsService>(),
       sl<SyncEventBus>(),
       sl<SyncHistoryRepository>(),
+      sl<ConflictDetector>(), // ✅ ADD
+      sl<ConflictResolutionService>(), // ✅ ADD
     ),
   );
 
-  sl.registerLazySingleton<SyncEngine>(
-    () => SyncEngine(
-      sl<SyncService>(),
-      sl<ConnectivityService>(),
-      sl<SyncStatusService>(),
-    ),
-  );
+  sl.registerLazySingleton<SyncEngine>(() => SyncEngine(sl(), sl(), sl()));
 
   // ============================================================
   // REPOSITORIES
   // ============================================================
 
   sl.registerLazySingleton<NotesRepository>(
-    () => NotesRepositoryImpl(
-      sl<NotesLocalDataSource>(),
-      sl<SyncLocalDataSource>(),
-    ),
+    () => NotesRepositoryImpl(sl(), sl()),
   );
 
   sl.registerLazySingleton<SyncRepository>(
-    () => SyncRepositoryImpl(sl<SyncLocalDataSource>(), sl<SyncService>()),
+    () => SyncRepositoryImpl(sl(), sl()),
   );
 
   // ============================================================
@@ -197,6 +185,5 @@ Future<void> initDependencies() async {
   );
 
   sl.registerFactory(() => NoteEditorCubit(saveNoteUseCase: sl()));
-
   sl.registerFactory(() => DeleteNoteCubit(deleteNoteUseCase: sl()));
 }

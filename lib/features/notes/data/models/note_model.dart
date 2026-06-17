@@ -25,9 +25,12 @@ class NoteModel extends HiveObject {
   @HiveField(6)
   final bool isDeleted;
 
-  /// 🔥 CHANGED: Enum → String
   @HiveField(7)
   final String syncStatus;
+
+  // ✅ NEW FIELD (IMPORTANT FIX)
+  @HiveField(8)
+  final String? conflictResolution;
 
   NoteModel({
     required this.id,
@@ -38,6 +41,7 @@ class NoteModel extends HiveObject {
     this.lastSyncedAt,
     required this.isDeleted,
     required this.syncStatus,
+    this.conflictResolution,
   });
 
   NoteModel copyWith({
@@ -49,6 +53,7 @@ class NoteModel extends HiveObject {
     DateTime? lastSyncedAt,
     bool? isDeleted,
     String? syncStatus,
+    String? conflictResolution,
   }) {
     return NoteModel(
       id: id ?? this.id,
@@ -59,6 +64,7 @@ class NoteModel extends HiveObject {
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
       isDeleted: isDeleted ?? this.isDeleted,
       syncStatus: syncStatus ?? this.syncStatus,
+      conflictResolution: conflictResolution ?? this.conflictResolution,
     );
   }
 }

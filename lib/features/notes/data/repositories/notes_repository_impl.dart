@@ -8,7 +8,7 @@ import 'package:syncnotes/features/notes/data/models/sync_operation_model.dart';
 import 'package:syncnotes/features/notes/domain/entities/note_entity.dart';
 import 'package:syncnotes/features/notes/domain/entities/sync_operation_type.dart';
 import 'package:syncnotes/features/notes/domain/repositories/notes_repository.dart';
-import 'package:syncnotes/sync/sync_engine.dart';
+import 'package:syncnotes/features/sync/engine/sync_engine.dart';
 import 'package:uuid/uuid.dart';
 
 class NotesRepositoryImpl implements NotesRepository {
@@ -16,6 +16,10 @@ class NotesRepositoryImpl implements NotesRepository {
   final SyncLocalDataSource syncLocalDataSource;
 
   const NotesRepositoryImpl(this.localDataSource, this.syncLocalDataSource);
+
+  // =========================================================
+  // CORE CRUD
+  // =========================================================
 
   @override
   Future<List<NoteEntity>> getNotes() async {
@@ -31,9 +35,7 @@ class NotesRepositoryImpl implements NotesRepository {
   Future<NoteEntity?> getNoteById(String id) async {
     final model = await localDataSource.getNoteById(id);
 
-    if (model == null) {
-      return null;
-    }
+    if (model == null) return null;
 
     return model.toEntity();
   }
@@ -44,10 +46,13 @@ class NotesRepositoryImpl implements NotesRepository {
 
     final existing = await localDataSource.getNoteById(note.id);
 
-    await localDataSource.saveNote(note.toModel());
+    // ✅ RESET CONFLICT STATE ON NEW USER EDIT
+    final updatedNote = note.copyWith(conflictResolution: null);
+
+    await localDataSource.saveNote(updatedNote.toModel());
 
     await _addSync(
-      note: note,
+      note: updatedNote,
       type: existing == null
           ? SyncOperationType.create
           : SyncOperationType.update,
@@ -58,9 +63,7 @@ class NotesRepositoryImpl implements NotesRepository {
   Future<void> deleteNote(String id) async {
     final noteModel = await localDataSource.getNoteById(id);
 
-    if (noteModel == null) {
-      return;
-    }
+    if (noteModel == null) return;
 
     final updated = noteModel.copyWith(
       isDeleted: true,
@@ -73,9 +76,9 @@ class NotesRepositoryImpl implements NotesRepository {
     await _addSync(note: updated.toEntity(), type: SyncOperationType.delete);
   }
 
-  // ============================================================
-  // STEP 7 SYNC QUEUE CREATION
-  // ============================================================
+  // =========================================================
+  // SYNC QUEUE CREATION
+  // =========================================================
 
   Future<void> _addSync({
     required NoteEntity note,
@@ -91,13 +94,56 @@ class NotesRepositoryImpl implements NotesRepository {
         retryCount: 0,
         lastTriedAt: null,
         isInProgress: false,
-
-        // Step 7 fields
         title: note.title,
         body: note.body,
       ),
     );
+
     AppLogger.sync("Queue updated");
+
     sl<SyncEngine>().markDirty();
+  }
+
+  // =========================================================
+  // 🔥 NEW METHODS (FIXED IMPLEMENTATIONS)
+  // =========================================================
+
+  @override
+  Future<void> removePendingOperationsForNote(String noteId) async {
+    final ops = await syncLocalDataSource.getOperations();
+
+    for (final op in ops) {
+      if (op.noteId == noteId) {
+        await syncLocalDataSource.deleteOperation(op.id);
+      }
+    }
+
+    AppLogger.log("🧹 Removed pending ops for: $noteId");
+  }
+
+  @override
+  Future<void> markSyncDirty() async {
+    sl<SyncEngine>().markDirty();
+  }
+
+  @override
+  Future<void> refreshFromServer() async {
+    AppLogger.log("🔄 Refresh from server triggered");
+
+    // optional: you can hook remote fetch here later
+    sl<SyncEngine>().syncNow();
+  }
+
+  @override
+  Future<bool> isSyncSafe(String noteId) async {
+    final ops = await syncLocalDataSource.getOperations();
+
+    final hasPendingOps = ops.any((op) => op.noteId == noteId);
+
+    final note = await localDataSource.getNoteById(noteId);
+
+    if (note == null) return true;
+
+    return !hasPendingOps && !note.isDeleted;
   }
 }

@@ -1,6 +1,9 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:syncnotes/app/app_logger.dart';
 
+// ============================================================
+// BLOC OBSERVER (LOGGING)
+// ============================================================
 class AppBlocObserver extends BlocObserver {
   @override
   void onChange(BlocBase bloc, Change change) {

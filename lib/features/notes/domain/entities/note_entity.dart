@@ -2,20 +2,19 @@ import '../../../../core/enums/sync_status.dart';
 
 class NoteEntity {
   final String id;
-
   final String title;
-
   final String body;
 
   final DateTime createdAt;
-
   final DateTime lastModifiedAt;
-
   final DateTime? lastSyncedAt;
 
   final bool isDeleted;
 
   final SyncStatus syncStatus;
+
+  // 🔥 NEW: conflict state (local metadata only)
+  final String? conflictResolution;
 
   const NoteEntity({
     required this.id,
@@ -26,6 +25,7 @@ class NoteEntity {
     this.lastSyncedAt,
     required this.isDeleted,
     required this.syncStatus,
+    this.conflictResolution,
   });
 
   NoteEntity copyWith({
@@ -37,6 +37,9 @@ class NoteEntity {
     DateTime? lastSyncedAt,
     bool? isDeleted,
     SyncStatus? syncStatus,
+
+    // 🔥 NEW FIELD
+    String? conflictResolution,
   }) {
     return NoteEntity(
       id: id ?? this.id,
@@ -47,6 +50,9 @@ class NoteEntity {
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
       isDeleted: isDeleted ?? this.isDeleted,
       syncStatus: syncStatus ?? this.syncStatus,
+
+      // 🔥 NEW FIELD
+      conflictResolution: conflictResolution ?? this.conflictResolution,
     );
   }
 }

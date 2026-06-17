@@ -2,13 +2,13 @@ import 'package:hive_ce/hive.dart';
 import 'package:syncnotes/app/app_logger.dart';
 
 import 'package:syncnotes/features/notes/data/models/sync_operation_model.dart';
-import 'package:syncnotes/sync/history/sync_history_model.dart';
+import 'package:syncnotes/sync_manager/history/sync_history_model.dart';
 
 import 'sync_local_datasource.dart';
 
 class SyncLocalDataSourceImpl implements SyncLocalDataSource {
   final Box<SyncOperationModel> operationBox;
-  final Box historyBox; // ✅ FIXED: no generic type for history
+  final Box historyBox;
 
   SyncLocalDataSourceImpl({
     required this.operationBox,
@@ -35,6 +35,28 @@ class SyncLocalDataSourceImpl implements SyncLocalDataSource {
     await operationBox.delete(id);
   }
 
+  // 🔥 NEW REQUIRED METHOD
+  @override
+  Future<void> deleteOperation(String id) async {
+    await operationBox.delete(id);
+  }
+
+  // 🔥 NEW REQUIRED METHOD
+  @override
+  Future<void> removeOperationsForNote(String noteId) async {
+    final keysToDelete = <String>[];
+
+    for (final op in operationBox.values) {
+      if (op.noteId == noteId) {
+        keysToDelete.add(op.id);
+      }
+    }
+
+    for (final key in keysToDelete) {
+      await operationBox.delete(key);
+    }
+  }
+
   // ============================================================
   // HISTORY
   // ============================================================
@@ -42,7 +64,7 @@ class SyncLocalDataSourceImpl implements SyncLocalDataSource {
   @override
   Future<void> addHistory(SyncHistoryModel model) async {
     AppLogger.sync("Saved history: ${model.id}");
-    await historyBox.put(model.id, model.toJson()); // 🔥 safe storage
+    await historyBox.put(model.id, model.toJson());
   }
 
   @override
@@ -66,7 +88,7 @@ class SyncLocalDataSourceImpl implements SyncLocalDataSource {
   }
 
   // ============================================================
-  // CLEANUP (SAFE VERSION)
+  // CLEANUP
   // ============================================================
 
   @override

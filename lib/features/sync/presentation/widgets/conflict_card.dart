@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:syncnotes/sync/conflict/conflict_model.dart';
+import 'package:syncnotes/features/conflict/data/models/conflict_model.dart';
 
 class ConflictCard extends StatelessWidget {
   final ConflictModel conflict;

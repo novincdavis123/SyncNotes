@@ -1,5 +1,6 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:syncnotes/app/app_logger.dart';
 
 import '../../domain/entities/note_entity.dart';
 import '../../domain/usecases/delete_note.dart';
@@ -9,10 +10,16 @@ import '../../domain/usecases/save_note.dart';
 import 'notes_event.dart';
 import 'notes_state.dart';
 
+import 'package:syncnotes/features/sync/events/sync_event_bus.dart';
+import 'package:syncnotes/features/sync/events/sync_event.dart';
+import 'package:syncnotes/di/injection.dart';
+
 class NotesBloc extends Bloc<NotesEvent, NotesState> {
   final GetNotesUseCase getNotesUseCase;
   final SaveNoteUseCase saveNoteUseCase;
   final DeleteNoteUseCase deleteNoteUseCase;
+
+  late final StreamSubscription _syncSubscription;
 
   NotesBloc({
     required this.getNotesUseCase,
@@ -22,11 +29,22 @@ class NotesBloc extends Bloc<NotesEvent, NotesState> {
     on<LoadNotesEvent>(_onLoadNotes);
     on<RefreshNotesEvent>(_onRefreshNotes);
 
-    // ✅ FIXED: replace SaveNoteEvent
     on<CreateNoteEvent>(_onCreateNote);
     on<UpdateNoteEvent>(_onUpdateNote);
-
     on<DeleteNoteEvent>(_onDeleteNote);
+
+    // ======================================================
+    // 🔥 AUTO SYNC LISTENER (IMPORTANT FIX)
+    // ======================================================
+    final eventBus = sl<SyncEventBus>();
+
+    _syncSubscription = eventBus.stream.listen((event) {
+      if (event.type == SyncEventType.syncRefresh ||
+          event.type == SyncEventType.operationSuccess ||
+          event.type == SyncEventType.completed) {
+        add(const RefreshNotesEvent());
+      }
+    });
   }
 
   // =========================================================
@@ -56,7 +74,6 @@ class NotesBloc extends Bloc<NotesEvent, NotesState> {
     };
 
     emit(NotesLoaded(notes: previousNotes, isRefreshing: true));
-
     await _loadNotes(emit);
   }
 
@@ -69,10 +86,7 @@ class NotesBloc extends Bloc<NotesEvent, NotesState> {
     Emitter<NotesState> emit,
   ) async {
     try {
-      AppLogger.log("➕ Create note: ${event.note.id}");
-
       await saveNoteUseCase(event.note);
-
       await _loadNotes(emit);
     } catch (e) {
       emit(NotesError(message: e.toString(), previousNotes: _currentNotes));
@@ -88,10 +102,7 @@ class NotesBloc extends Bloc<NotesEvent, NotesState> {
     Emitter<NotesState> emit,
   ) async {
     try {
-      AppLogger.log("✏️ Update note: ${event.note.id}");
-
       await saveNoteUseCase(event.note);
-
       await _loadNotes(emit);
     } catch (e) {
       emit(NotesError(message: e.toString(), previousNotes: _currentNotes));
@@ -107,10 +118,7 @@ class NotesBloc extends Bloc<NotesEvent, NotesState> {
     Emitter<NotesState> emit,
   ) async {
     try {
-      AppLogger.log("🗑️ Delete note: ${event.id}");
-
       await deleteNoteUseCase(event.id);
-
       await _loadNotes(emit);
     } catch (e) {
       emit(NotesError(message: e.toString(), previousNotes: _currentNotes));
@@ -118,17 +126,12 @@ class NotesBloc extends Bloc<NotesEvent, NotesState> {
   }
 
   // =========================================================
-  // LOAD CORE
+  // CORE LOADER
   // =========================================================
 
   Future<void> _loadNotes(Emitter<NotesState> emit) async {
-    try {
-      final notes = await getNotesUseCase();
-
-      emit(NotesLoaded(notes: notes));
-    } catch (e) {
-      emit(NotesError(message: e.toString(), previousNotes: _currentNotes));
-    }
+    final notes = await getNotesUseCase();
+    emit(NotesLoaded(notes: notes));
   }
 
   List<NoteEntity> get _currentNotes {
@@ -137,5 +140,11 @@ class NotesBloc extends Bloc<NotesEvent, NotesState> {
       NotesError(:final previousNotes) => previousNotes,
       _ => [],
     };
+  }
+
+  @override
+  Future<void> close() {
+    _syncSubscription.cancel();
+    return super.close();
   }
 }

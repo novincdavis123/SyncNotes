@@ -1,18 +1,42 @@
 import 'package:flutter/material.dart';
 
-import 'package:syncnotes/sync/conflict/conflict_model.dart';
-import 'package:syncnotes/sync/conflict/conflict_resolution_service.dart';
-import 'package:syncnotes/sync/conflict/conflict_resolution_strategy.dart';
+import 'package:syncnotes/features/conflict/data/models/conflict_model.dart';
+import 'package:syncnotes/features/conflict/data/conflict_resolution_service.dart';
+import 'package:syncnotes/features/conflict/domain/enums/conflict_resolution_strategy.dart';
 import 'package:syncnotes/di/injection.dart';
 
-class ConflictScreen extends StatelessWidget {
+class ConflictScreen extends StatefulWidget {
   final ConflictModel conflict;
 
   const ConflictScreen({super.key, required this.conflict});
 
   @override
-  Widget build(BuildContext context) {
+  State<ConflictScreen> createState() => _ConflictScreenState();
+}
+
+class _ConflictScreenState extends State<ConflictScreen> {
+  bool _isProcessing = false;
+
+  Future<void> _resolve(ConflictResolutionStrategy strategy) async {
+    if (_isProcessing) return;
+
+    setState(() => _isProcessing = true);
+
     final resolver = sl<ConflictResolutionService>();
+
+    await resolver.resolveConflict(
+      conflict: widget.conflict,
+      strategy: strategy,
+    );
+
+    if (!mounted) return;
+
+    Navigator.pop(context, strategy); // 🔥 IMPORTANT: return result
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final conflict = widget.conflict;
 
     return Scaffold(
       appBar: AppBar(title: const Text("Conflict Detected")),
@@ -49,18 +73,17 @@ class ConflictScreen extends StatelessWidget {
 
               const SizedBox(height: 12),
 
+              // =========================
               // ACTIONS
+              // =========================
               Row(
                 children: [
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () async {
-                        await resolver.resolveConflict(
-                          conflict: conflict,
-                          strategy: ConflictResolutionStrategy.keepLocal,
-                        );
-                        Navigator.pop(context);
-                      },
+                      onPressed: _isProcessing
+                          ? null
+                          : () =>
+                                _resolve(ConflictResolutionStrategy.keepLocal),
                       child: const Text("Keep Local"),
                     ),
                   ),
@@ -69,13 +92,10 @@ class ConflictScreen extends StatelessWidget {
 
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () async {
-                        await resolver.resolveConflict(
-                          conflict: conflict,
-                          strategy: ConflictResolutionStrategy.keepServer,
-                        );
-                        Navigator.pop(context);
-                      },
+                      onPressed: _isProcessing
+                          ? null
+                          : () =>
+                                _resolve(ConflictResolutionStrategy.keepServer),
                       child: const Text("Keep Server"),
                     ),
                   ),
@@ -87,16 +107,18 @@ class ConflictScreen extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
-                  onPressed: () async {
-                    await resolver.resolveConflict(
-                      conflict: conflict,
-                      strategy: ConflictResolutionStrategy.merge,
-                    );
-                    Navigator.pop(context);
-                  },
+                  onPressed: _isProcessing
+                      ? null
+                      : () => _resolve(ConflictResolutionStrategy.merge),
                   child: const Text("Merge"),
                 ),
               ),
+
+              if (_isProcessing)
+                const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: LinearProgressIndicator(),
+                ),
             ],
           ),
         ),
